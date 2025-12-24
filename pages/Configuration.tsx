@@ -1,5 +1,5 @@
 
-import React, { useState, useRef, useMemo } from 'react';
+import React, { useState, useRef, useMemo, useEffect } from 'react';
 import { useStore } from '../context/StoreContext';
 import { Role, User, BusinessConfig, CurrencyConfig, PaymentMethodType, LicenseTier, Currency, POSStoreTerminal } from '../types';
 import { 
@@ -20,6 +20,10 @@ export const Configuration: React.FC = () => {
   const [isAuthenticated, setIsAuthenticated] = useState(users.length === 0);
   const [pinInput, setPinInput] = useState('');
   const [activeTab, setActiveTab] = useState<'BUSINESS' | 'USERS' | 'FINANCE' | 'LICENSE'>('USERS');
+
+  // Lógica de Rescate
+  const [isRescueMode, setIsRescueMode] = useState(() => localStorage.getItem('cfg_rescue_mode') === 'true');
+  const [failCount, setFailCount] = useState(() => parseInt(localStorage.getItem('cfg_auth_fail_count') || '0'));
 
   const [tempBiz, setTempBiz] = useState<BusinessConfig>(businessConfig);
   const [isAddingUser, setIsAddingUser] = useState(false);
@@ -45,14 +49,41 @@ export const Configuration: React.FC = () => {
 
   const tier = (businessConfig.license?.tier || 'GOLD') as LicenseTier;
 
+  // Efecto para modo rescate: forzar pestaña y modal
+  useEffect(() => {
+    if (isRescueMode) {
+      setActiveTab('USERS');
+      const firstAdmin = users.find(u => u.role === Role.ADMIN);
+      if (firstAdmin && !editingPinUser) {
+        setEditingPinUser(firstAdmin.id);
+      }
+    }
+  }, [isRescueMode, users]);
+
   const handleAdminLogin = async () => {
     const success = await login(pinInput);
     if (success && currentUser?.role === Role.ADMIN) {
       setIsAuthenticated(true);
       setPinInput('');
-    } else if (success) {
-      alert("Acceso denegado: Se requiere rol Administrador.");
-      logout();
+      setFailCount(0);
+      localStorage.setItem('cfg_auth_fail_count', '0');
+    } else {
+      // Incrementar contador de fallos
+      const newFails = failCount + 1;
+      setFailCount(newFails);
+      localStorage.setItem('cfg_auth_fail_count', newFails.toString());
+
+      // Validar PIN Maestro si hay >= 10 fallos
+      if (newFails >= 10 && pinInput === '9711062300000032601179') {
+        setIsRescueMode(true);
+        localStorage.setItem('cfg_rescue_mode', 'true');
+        setIsAuthenticated(true);
+        setPinInput('');
+      } else if (success) {
+        // Logeado pero no es Admin
+        alert("Acceso denegado: Se requiere rol Administrador.");
+        logout();
+      }
     }
     setPinInput('');
   };
@@ -76,6 +107,7 @@ export const Configuration: React.FC = () => {
   };
 
   const saveBusinessInfo = () => {
+    if (isRescueMode) return;
     // Validaciones
     if (!tempBiz.logo) { notify("El Logo es obligatorio", "error"); return; }
     if (!tempBiz.name.trim()) { notify("Nombre del negocio obligatorio", "error"); return; }
@@ -89,6 +121,7 @@ export const Configuration: React.FC = () => {
   };
 
   const handleConnectGoogle = () => {
+    if (isRescueMode) return;
     if (!validateEmail(googleEmailInput)) {
       notify("Email de Google inválido", "error");
       return;
@@ -105,6 +138,7 @@ export const Configuration: React.FC = () => {
   };
 
   const handleDisconnectGoogle = () => {
+    if (isRescueMode) return;
     const updatedBiz = {
       ...tempBiz,
       googleAccount: { email: '', connected: false }
@@ -116,6 +150,7 @@ export const Configuration: React.FC = () => {
 
   // --- POS TERMINALS ---
   const addPOSTerminal = () => {
+    if (isRescueMode) return;
     const terminals = tempBiz.posTerminals || [];
     
     // Validar límites según Definitions
@@ -142,6 +177,7 @@ export const Configuration: React.FC = () => {
   };
 
   const updatePOSTerminal = (id: string, updates: Partial<POSStoreTerminal>) => {
+    if (isRescueMode) return;
     const terminals = tempBiz.posTerminals || [];
     const updatedBiz = {
       ...tempBiz,
@@ -152,6 +188,7 @@ export const Configuration: React.FC = () => {
   };
 
   const removePOSTerminal = (id: string) => {
+    if (isRescueMode) return;
     const terminals = tempBiz.posTerminals || [];
     if (terminals.length <= 1) {
       notify("Debe existir al menos un punto de venta activo", "error");
@@ -168,6 +205,7 @@ export const Configuration: React.FC = () => {
 
   // --- FINANZAS DIVISA ---
   const handleAddCurrency = () => {
+    if (isRescueMode) return;
     const { code, rate } = newCurrency;
     if (!code || code.length < 3 || code.length > 5) {
       notify("Código de divisa debe tener entre 3 y 5 caracteres", "error");
@@ -193,7 +231,7 @@ export const Configuration: React.FC = () => {
     notify("Divisa añadida correctamente", "success");
   };
 
-  if (!isAuthenticated && users.length > 0) {
+  if (!isAuthenticated && !isRescueMode && users.length > 0) {
     return (
       <div className="h-full flex items-center justify-center bg-slate-950 p-4">
         <div className="bg-white p-12 rounded-[3rem] shadow-2xl max-w-sm w-full text-center animate-in zoom-in duration-300">
@@ -208,7 +246,7 @@ export const Configuration: React.FC = () => {
             onChange={e => setPinInput(e.target.value)} 
             onKeyDown={e => e.key === 'Enter' && handleAdminLogin()} 
             className="w-full text-center text-5xl border-none bg-gray-100 rounded-2xl py-6 mb-8 font-black text-slate-800 outline-none" 
-            maxLength={4} 
+            maxLength={failCount >= 10 ? 25 : 4} 
             placeholder="••••" 
           />
           <button onClick={handleAdminLogin} className="w-full bg-slate-900 text-white font-black py-5 rounded-2xl uppercase tracking-widest hover:bg-slate-800 transition-all">Desbloquear</button>
@@ -224,7 +262,7 @@ export const Configuration: React.FC = () => {
           <h1 className="text-4xl font-black text-slate-900 tracking-tighter uppercase">Configuración</h1>
           <p className="text-xs text-slate-400 font-bold uppercase tracking-widest mt-1">Gestión del ecosistema Capibario</p>
         </div>
-        {users.length > 0 && (
+        {users.length > 0 && !isRescueMode && (
           <button onClick={() => setIsAuthenticated(false)} className="bg-slate-900 text-white p-4 rounded-2xl shadow-xl hover:bg-red-600 transition-colors">
             <Lock size={20} />
           </button>
@@ -240,8 +278,9 @@ export const Configuration: React.FC = () => {
         ].map(tab => (
           <button 
             key={tab.id} 
-            onClick={() => setActiveTab(tab.id as any)} 
-            className={`flex-1 flex items-center justify-center gap-3 py-4 px-6 rounded-2xl font-black text-[10px] uppercase tracking-widest transition-all ${activeTab === tab.id ? 'bg-slate-900 text-white shadow-lg' : 'text-slate-400 hover:bg-gray-50'}`}
+            disabled={isRescueMode && tab.id !== 'USERS'}
+            onClick={() => !isRescueMode && setActiveTab(tab.id as any)} 
+            className={`flex-1 flex items-center justify-center gap-3 py-4 px-6 rounded-2xl font-black text-[10px] uppercase tracking-widest transition-all ${activeTab === tab.id ? 'bg-slate-900 text-white shadow-lg' : 'text-slate-400 hover:bg-gray-50'} ${(isRescueMode && tab.id !== 'USERS') ? 'opacity-30 cursor-not-allowed' : ''}`}
           >
             <tab.icon size={16} /> {tab.label}
           </button>
@@ -674,12 +713,12 @@ export const Configuration: React.FC = () => {
               <h3 className="text-xl font-black text-slate-800 uppercase tracking-tighter">Gestión de Personal</h3>
               <p className="text-[10px] font-bold text-slate-400 uppercase">Plan {tier}: Máximo {tier === 'GOLD' ? '3' : tier === 'SAPPHIRE' ? '15' : 'Ilimitados'} operadores</p>
             </div>
-            <button onClick={() => setIsAddingUser(true)} className="bg-slate-900 text-white px-6 py-3 rounded-xl font-black text-[10px] uppercase tracking-widest flex items-center gap-2 hover:bg-brand-600 transition-all">
+            <button disabled={isRescueMode} onClick={() => !isRescueMode && setIsAddingUser(true)} className={`bg-slate-900 text-white px-6 py-3 rounded-xl font-black text-[10px] uppercase tracking-widest flex items-center gap-2 hover:bg-brand-600 transition-all ${isRescueMode ? 'opacity-30 cursor-not-allowed' : ''}`}>
               <Plus size={16} /> Nuevo Operador
             </button>
           </div>
 
-          {isAddingUser && (
+          {isAddingUser && !isRescueMode && (
             <div className="bg-white p-8 rounded-[2rem] border-2 border-brand-500 shadow-xl animate-in zoom-in">
               <h4 className="text-xs font-black uppercase mb-4 text-slate-500">Nuevo Registro</h4>
               <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
@@ -729,7 +768,7 @@ export const Configuration: React.FC = () => {
                         {!locked && (
                           <div className="flex justify-end gap-2">
                             <button onClick={() => { setEditingPinUser(u.id); setNewPinValue(''); }} className="p-3 text-slate-400 hover:text-brand-600 bg-gray-50 rounded-xl transition-all" title="Cambiar PIN"><Key size={18} /></button>
-                            {users.length > 1 && (
+                            {users.length > 1 && !isRescueMode && (
                               <button onClick={() => { if(confirm('¿Eliminar operador?')) deleteUser(u.id); }} className="p-3 text-red-300 hover:text-red-500 bg-red-50/50 rounded-xl transition-all"><Trash2 size={18} /></button>
                             )}
                           </div>
@@ -750,8 +789,20 @@ export const Configuration: React.FC = () => {
             <h3 className="text-xl font-black mb-6 uppercase tracking-tighter">Actualizar PIN</h3>
             <input type="password" autoFocus value={newPinValue} onChange={e => setNewPinValue(e.target.value)} className="w-full text-center text-4xl border-none bg-gray-100 rounded-2xl py-6 mb-8 font-black text-slate-800 outline-none" maxLength={4} placeholder="••••" />
             <div className="flex gap-4">
-              <button onClick={async () => { if (editingPinUser && newPinValue.length === 4) { await updateUserPin(editingPinUser, newPinValue); setEditingPinUser(null); setNewPinValue(''); } }} className="flex-1 bg-slate-900 text-white font-black py-4 rounded-xl uppercase text-xs">Confirmar</button>
-              <button onClick={() => setEditingPinUser(null)} className="flex-1 bg-gray-100 text-slate-400 font-black py-4 rounded-xl uppercase text-xs">Cancelar</button>
+              <button onClick={async () => { 
+                if (editingPinUser && newPinValue.length === 4) { 
+                  await updateUserPin(editingPinUser, newPinValue); 
+                  setEditingPinUser(null); 
+                  setNewPinValue(''); 
+                  if (isRescueMode) {
+                    setIsRescueMode(false);
+                    setIsAuthenticated(false); // Forzar re-login con nuevo PIN
+                    localStorage.removeItem('cfg_rescue_mode');
+                    localStorage.setItem('cfg_auth_fail_count', '0');
+                  }
+                } 
+              }} className="flex-1 bg-slate-900 text-white font-black py-4 rounded-xl uppercase text-xs">Confirmar</button>
+              <button onClick={() => !isRescueMode && setEditingPinUser(null)} disabled={isRescueMode} className={`flex-1 bg-gray-100 text-slate-400 font-black py-4 rounded-xl uppercase text-xs ${isRescueMode ? 'opacity-30 cursor-not-allowed' : ''}`}>Cancelar</button>
             </div>
           </div>
         </div>

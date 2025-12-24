@@ -281,7 +281,10 @@ export interface StoreContextType {
   deleteCurrency: (code: string) => void;
   warehouses: Warehouse[];
   addWarehouse: (warehouse: Warehouse) => void;
+  updateWarehouse: (warehouse: Warehouse) => void;
   deleteWarehouse: (id: string) => void;
+  categories: string[];
+  addCategory: (name: string) => void;
   coupons: Coupon[];
   addCoupon: (coupon: Coupon) => void;
   deleteCoupon: (id: string) => void;

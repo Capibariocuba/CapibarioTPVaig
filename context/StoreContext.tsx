@@ -4,7 +4,7 @@ import {
   StoreContextType, View, CurrencyConfig, LedgerEntry, User, 
   BusinessConfig, Coupon, Offer, Role, Product, Client, ClientGroup, Ticket, Sale, Warehouse, LicenseTier, POSStoreTerminal
 } from '../types';
-import { MOCK_USERS, DEFAULT_BUSINESS_CONFIG } from '../constants';
+import { MOCK_USERS, DEFAULT_BUSINESS_CONFIG, CATEGORIES as DEFAULT_CATEGORIES } from '../constants';
 import { PermissionEngine } from '../security/PermissionEngine';
 import { AlertCircle, CheckCircle } from 'lucide-react';
 
@@ -44,7 +44,20 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     return DEFAULT_CURRENCIES;
   });
 
-  const [warehouses, setWarehouses] = useState<Warehouse[]>(() => JSON.parse(localStorage.getItem('warehouses') || '[]'));
+  const [warehouses, setWarehouses] = useState<Warehouse[]>(() => {
+    const saved = JSON.parse(localStorage.getItem('warehouses') || '[]');
+    if (saved.length === 0) {
+      return [{ id: 'wh-default', name: 'Almacén por defecto', location: 'Principal' }];
+    }
+    return saved;
+  });
+
+  const [categories, setCategories] = useState<string[]>(() => {
+    const saved = JSON.parse(localStorage.getItem('categories') || '[]');
+    const merged = Array.from(new Set([...DEFAULT_CATEGORIES, ...saved, 'Catálogo']));
+    return merged;
+  });
+
   const [ledger, setLedger] = useState<LedgerEntry[]>(() => JSON.parse(localStorage.getItem('ledger') || '[]'));
   const [products, setProducts] = useState<Product[]>(() => JSON.parse(localStorage.getItem('products') || '[]'));
   const [sales, setSales] = useState<Sale[]>(() => JSON.parse(localStorage.getItem('sales') || '[]'));
@@ -105,6 +118,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     localStorage.setItem('businessConfig', JSON.stringify(businessConfig));
     localStorage.setItem('currencies', JSON.stringify(currencies));
     localStorage.setItem('warehouses', JSON.stringify(warehouses));
+    localStorage.setItem('categories', JSON.stringify(categories));
     localStorage.setItem('products', JSON.stringify(products));
     localStorage.setItem('sales', JSON.stringify(sales));
     localStorage.setItem('ledger', JSON.stringify(ledger));
@@ -112,7 +126,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     localStorage.setItem('clientGroups', JSON.stringify(clientGroups));
     localStorage.setItem('coupons', JSON.stringify(coupons));
     localStorage.setItem('offers', JSON.stringify(offers));
-  }, [currentUser, users, businessConfig, currencies, warehouses, products, sales, ledger, clients, clientGroups, coupons, offers]);
+  }, [currentUser, users, businessConfig, currencies, warehouses, categories, products, sales, ledger, clients, clientGroups, coupons, offers]);
 
   const validatePinSecurity = async (pin: string, excludeUserId?: string): Promise<{valid: boolean, error?: string}> => {
     if (pin.length !== 4) return { valid: false, error: "El PIN debe tener 4 dígitos." };
@@ -139,9 +153,25 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   return (
     <StoreContext.Provider value={{
       view, setView, currentUser, users, businessConfig, updateBusinessConfig: setBusinessConfig,
-      currencies, warehouses, ledger, products, sales, clients, coupons, offers,
-      addWarehouse: (w) => setWarehouses([...warehouses, w]),
-      deleteWarehouse: (id) => setWarehouses(warehouses.filter(w => w.id !== id)),
+      currencies, warehouses, categories, ledger, products, sales, clients, coupons, offers,
+      addWarehouse: (w) => {
+        if (!PermissionEngine.enforcePlanLimits('WAREHOUSES', warehouses.length, getCurrentTier())) {
+          notify(`Límite de almacenes alcanzado para el plan ${getCurrentTier()}. Mejore a SAPPHIRE/PLATINUM.`, 'error');
+          return;
+        }
+        setWarehouses([...warehouses, w]);
+      },
+      updateWarehouse: (w) => setWarehouses(warehouses.map(wh => wh.id === w.id ? w : wh)),
+      deleteWarehouse: (id) => {
+        if (warehouses.length <= 1) {
+          notify("Debe existir al menos un almacén.", "error");
+          return;
+        }
+        setWarehouses(warehouses.filter(w => w.id !== id));
+      },
+      addCategory: (c) => {
+        if (!categories.includes(c)) setCategories([...categories, c]);
+      },
       addUser: async (u) => {
         const validation = await validatePinSecurity(u.pin);
         if (!validation.valid) { notify(validation.error!, "error"); return; }
@@ -175,6 +205,9 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       notification, clearNotification: () => setNotification(null),
       notify,
       addClient: (c) => setClients([...clients, c]),
+      addProduct: (p) => setProducts([...products, p]),
+      updateProduct: (p) => setProducts(products.map(prod => prod.id === p.id ? p : prod)),
+      deleteProduct: (id) => setProducts(products.filter(p => p.id !== id)),
       cart, clearCart: () => setCart([]), addToCart: (p) => setCart([...cart, p]),
       removeFromCart: (id) => setCart(cart.filter(i => i.cartId !== id)),
       posCurrency, setPosCurrency, activeShift, 
