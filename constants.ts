@@ -1,3 +1,4 @@
+
 import { Currency, User, Role, BusinessConfig, Product, Client } from './types';
 
 // Función para generar un HWID persistente simulado para el navegador
@@ -11,7 +12,6 @@ export const generateHwid = () => {
 };
 
 // Logo Oficial Capibario TPV (Identidad fija del Software)
-// Se utiliza un SVG representativo de Capibara + TPV para evitar truncamiento y errores de sintaxis
 export const CAPIBARIO_LOGO = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'%3E%3Cdefs%3E%3ClinearGradient id='a' x1='0%25' y1='0%25' x2='100%25' y2='100%25'%3E%3Cstop offset='0%25' style='stop-color:%230ea5e9;stop-opacity:1' /%3E%3Cstop offset='100%25' style='stop-color:%230c4a6e;stop-opacity:1' /%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='512' height='512' rx='128' fill='url(%23a)'/%3E%3Cpath d='M350 200c0-50-40-80-90-80s-100 30-100 80v120h190V200z' fill='%23fff' opacity='.2'/%3E%3Ccircle cx='200' cy='200' r='20' fill='%23fff'/%3E%3Crect x='160' y='340' width='192' height='40' rx='10' fill='%23f97316'/%3E%3Ctext x='256' y='368' font-family='Arial' font-weight='bold' font-size='24' text-anchor='middle' fill='%23fff'%3ETPV%3C/text%3E%3C/svg%3E";
 
 // LLAVES MAESTRAS DE 24 HORAS
@@ -29,7 +29,7 @@ export const DEFAULT_BUSINESS_CONFIG: BusinessConfig = {
   ticketSequence: 1,
   address: "Dirección del Negocio",
   showAddress: true,
-  taxId: "000-000-000", 
+  taxId: "", 
   showTaxId: true,
   phone: "+53 00000000",
   showPhone: true,
@@ -38,7 +38,7 @@ export const DEFAULT_BUSINESS_CONFIG: BusinessConfig = {
   primaryCurrency: Currency.CUP,
   footerMessage: "Gracias por su compra",
   showFooter: true,
-  logo: undefined, // El usuario puede subir su propio logo para sus tickets aquí
+  logo: undefined,
   licenseStatus: "TRIAL",
   activeModules: ['POS', 'INVENTORY', 'DASHBOARD', 'LEDGER', 'CONFIGURATION'],
   paymentMethods: [
@@ -63,7 +63,11 @@ export const DEFAULT_BUSINESS_CONFIG: BusinessConfig = {
     installationDate: new Date().toISOString()
   },
   license: undefined, 
-  lastUpdated: new Date().toISOString()
+  lastUpdated: new Date().toISOString(),
+  // Valores por defecto Empresa Fase 2
+  googleAccount: { email: '', connected: false },
+  posTerminals: [],
+  peripherals: { printerMode: 'BROWSER', barcodeScannerMode: 'HID' }
 };
 
 export const MOCK_USERS: User[] = [

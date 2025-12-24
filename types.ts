@@ -67,6 +67,22 @@ export interface SecurityConfig {
   installationDate: string;
 }
 
+export interface POSStoreTerminal {
+  id: string;
+  name: string;
+  warehouseId: string;
+}
+
+export interface GoogleAccountStub {
+  email: string;
+  connected: boolean;
+}
+
+export interface PeripheralsSettings {
+  printerMode: 'NONE' | 'BROWSER' | 'ESCPOS';
+  barcodeScannerMode: 'NONE' | 'HID';
+}
+
 export interface BusinessConfig {
   name: string;
   showName: boolean;
@@ -93,6 +109,10 @@ export interface BusinessConfig {
   license?: LicenseData;
   security: SecurityConfig;
   lastUpdated?: string;
+  // Nuevos Campos
+  googleAccount?: GoogleAccountStub;
+  posTerminals?: POSStoreTerminal[];
+  peripherals?: PeripheralsSettings;
 }
 
 export interface User {
@@ -247,11 +267,11 @@ export interface StoreContextType {
   view: View;
   setView: (view: View) => void;
   currentUser: User | null;
-  login: (pin: string) => boolean;
+  login: (pin: string) => Promise<boolean>;
   logout: () => void;
   users: User[];
-  addUser: (user: User) => void;
-  updateUserPin: (userId: string, newPin: string) => void;
+  addUser: (user: User) => Promise<void>;
+  updateUserPin: (userId: string, newPin: string) => Promise<void>;
   deleteUser: (id: string) => void;
   businessConfig: BusinessConfig;
   updateBusinessConfig: (config: BusinessConfig) => void;
@@ -301,8 +321,8 @@ export interface StoreContextType {
   timeManipulationDetected: boolean;
   checkModuleAccess: (moduleId: string) => boolean;
   applyLicenseKey: (key: string) => Promise<boolean>;
-  // Adiciones Fase 2
   isItemLocked: (limitKey: any, index: number) => boolean;
   notification: { message: string, type: 'error' | 'success' } | null;
   clearNotification: () => void;
+  notify: (message: string, type?: 'error' | 'success') => void;
 }

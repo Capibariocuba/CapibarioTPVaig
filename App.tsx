@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+
+import React, { useState, useEffect } from 'react';
 import { StoreProvider, useStore } from './context/StoreContext';
 import { Sidebar } from './components/Sidebar';
 import { POS } from './pages/POS';
@@ -30,14 +31,9 @@ const ActivationScreen: React.FC = () => {
         if (key.includes('GOLD')) tier = 'GOLD';
         else if (key.includes('SAPPHIRE')) tier = 'SAPPHIRE';
         else if (key.includes('PLATINUM')) tier = 'PLATINUM';
-
         const expiry = new Date();
         expiry.setHours(expiry.getHours() + 24);
-
-        setSuccessLicense({
-            tier,
-            expiry: expiry.toLocaleString()
-        });
+        setSuccessLicense({ tier, expiry: expiry.toLocaleString() });
     }
   };
 
@@ -46,7 +42,6 @@ const ActivationScreen: React.FC = () => {
           <div className="h-screen w-screen bg-slate-950 flex items-center justify-center p-6 overflow-hidden relative">
               <div className="bg-white/5 backdrop-blur-2xl p-12 rounded-[4rem] border border-emerald-500/30 shadow-2xl max-w-2xl w-full text-center animate-in zoom-in duration-500">
                   <div className="mb-8 inline-flex p-4 bg-white rounded-[2.5rem] border border-emerald-500/30 shadow-xl overflow-hidden">
-                      {/* Logo del SOFTWARE fijo */}
                       <img src={CAPIBARIO_LOGO} alt="Logo" className="w-24 h-24 object-contain" />
                   </div>
                   <h1 className="text-4xl font-black text-white mb-4 tracking-tighter">¡Activación Exitosa!</h1>
@@ -55,10 +50,6 @@ const ActivationScreen: React.FC = () => {
                       <div className="bg-white/5 p-6 rounded-3xl border border-white/5 inline-block mx-auto">
                           <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-2">Licencia Activada</p>
                           <p className="text-2xl font-black text-emerald-400 uppercase tracking-widest">{successLicense.tier} EDITION</p>
-                          <div className="mt-4 border-t border-white/5 pt-4">
-                              <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1">Vence el</p>
-                              <p className="text-sm font-bold text-white">{successLicense.expiry}</p>
-                          </div>
                       </div>
                   </div>
                   <p className="text-slate-400 animate-pulse text-xs font-bold uppercase tracking-widest">Iniciando sistema...</p>
@@ -69,19 +60,11 @@ const ActivationScreen: React.FC = () => {
 
   return (
     <div className="h-screen w-screen bg-slate-950 flex items-center justify-center p-6 overflow-hidden relative">
-      <div className="absolute top-0 left-0 w-full h-full opacity-10 pointer-events-none">
-          <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] bg-brand-500 rounded-full blur-[120px]"></div>
-          <div className="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] bg-emerald-500 rounded-full blur-[120px]"></div>
-      </div>
-
       <div className="bg-white/5 backdrop-blur-2xl p-12 rounded-[4rem] border border-white/10 shadow-2xl max-w-2xl w-full text-center relative z-10 animate-in zoom-in duration-500">
           <div className="mb-10 inline-flex p-4 bg-white rounded-[2.5rem] border border-brand-500/30 shadow-2xl overflow-hidden scale-110">
-              {/* Logo del SOFTWARE fijo */}
               <img src={CAPIBARIO_LOGO} alt="Capibario Logo" className="w-32 h-32 object-contain" />
           </div>
-          
           <h1 className="text-4xl font-black text-white mb-2 tracking-tighter">Bienvenido a Capibario TPV</h1>
-          <h2 className="text-xl font-bold text-slate-300 mb-2">Sistema de gestión de PYMES y TPV</h2>
           <p className="text-brand-400 font-black uppercase tracking-[0.2em] text-[10px] mb-12">Desarrollado por CAPIBARIO (+53 50019541)</p>
 
           <div className="space-y-6 text-left mb-12">
@@ -92,7 +75,6 @@ const ActivationScreen: React.FC = () => {
                       <p className="text-sm font-black text-white font-mono">{businessConfig.security.hwid}</p>
                   </div>
               </div>
-
               <div className="bg-white/5 p-8 rounded-[2.5rem] border border-white/10 relative">
                   <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4 pl-2">Llave de Licencia Maestro</label>
                   <div className="relative">
@@ -104,32 +86,17 @@ const ActivationScreen: React.FC = () => {
                         onChange={e => setKey(e.target.value.toUpperCase())}
                       />
                   </div>
-                  
                   {error && (
-                    <div className="mt-6 p-6 bg-red-500/10 border border-red-500/20 rounded-2xl animate-in fade-in slide-in-from-top-2">
-                        <div className="flex gap-4 items-start">
-                            <AlertCircle className="text-red-500 flex-shrink-0" size={20} />
-                            <div>
-                                <p className="text-xs font-bold text-red-200 leading-relaxed mb-4">{error}</p>
-                                <a 
-                                  href="https://wa.me/5350019541" 
-                                  target="_blank" 
-                                  className="inline-flex items-center gap-2 bg-emerald-500 text-slate-950 px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-emerald-400 transition-colors"
-                                >
-                                  <MessageCircle size={14} /> Contactar Soporte WhatsApp
-                                </a>
-                            </div>
-                        </div>
+                    <div className="mt-6 p-6 bg-red-500/10 border border-red-500/20 rounded-2xl animate-in fade-in">
+                        <p className="text-xs font-bold text-red-200 leading-relaxed mb-4">{error}</p>
+                        <a href="https://wa.me/5350019541" target="_blank" className="inline-flex items-center gap-2 bg-emerald-500 text-slate-950 px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest">
+                          <MessageCircle size={14} /> Contactar Soporte
+                        </a>
                     </div>
                   )}
               </div>
           </div>
-
-          <button 
-            onClick={handleActivate}
-            disabled={isLoading || !key}
-            className="w-full bg-brand-500 hover:bg-brand-400 text-slate-950 font-black py-6 rounded-3xl shadow-xl shadow-brand-500/20 transition-all flex items-center justify-center gap-3 uppercase tracking-widest text-xs disabled:opacity-30 disabled:grayscale"
-          >
+          <button onClick={handleActivate} disabled={isLoading || !key} className="w-full bg-brand-500 hover:bg-brand-400 text-slate-950 font-black py-6 rounded-3xl shadow-xl transition-all uppercase tracking-widest text-xs">
             {isLoading ? "Validando Firma..." : "Activar Sistema"} <Globe size={18} />
           </button>
       </div>
@@ -138,11 +105,16 @@ const ActivationScreen: React.FC = () => {
 };
 
 const MainLayout: React.FC = () => {
-  const { view, isLicenseValid } = useStore();
+  const { view, setView, isLicenseValid, users } = useStore();
 
-  if (!isLicenseValid) {
-      return <ActivationScreen />;
-  }
+  // Boot Flow Logic: Si no hay operadores, forzar vista de configuración
+  useEffect(() => {
+    if (isLicenseValid && users.length === 0 && view !== View.CONFIGURATION) {
+      setView(View.CONFIGURATION);
+    }
+  }, [isLicenseValid, users.length, view]);
+
+  if (!isLicenseValid) return <ActivationScreen />;
 
   const renderContent = () => {
     switch (view) {
