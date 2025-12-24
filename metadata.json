@@ -1,0 +1,7 @@
+{
+  "name": "Capibario TPV",
+  "description": "Un sistema TPV profesional estándar internacional diseñado para el mercado cubano. Funciones de inventario, soporte multidivisa, capacidades offline y análisis avanzado.",
+  "requestFramePermissions": [
+    "camera"
+  ]
+}
