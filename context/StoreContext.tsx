@@ -10,6 +10,14 @@ import { AlertCircle, CheckCircle } from 'lucide-react';
 
 const StoreContext = createContext<StoreContextType | undefined>(undefined);
 
+// UTILIDAD DE GENERACIÓN DE IDS ÚNICOS E IRREPETIBLES (FASE B)
+const generateUniqueId = () => {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID().toUpperCase();
+  }
+  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`.toUpperCase();
+};
+
 const hashPin = async (pin: string): Promise<string> => {
   const msgUint8 = new TextEncoder().encode(pin + "capibario-tpv-salt"); 
   const hashBuffer = await crypto.subtle.digest('SHA-256', msgUint8);
@@ -44,28 +52,32 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     return saved;
   });
 
-  // MIGRACIÓN Y GESTIÓN DE CATEGORÍAS V2
+  // MIGRACIÓN Y GESTIÓN DE CATEGORÍAS V2 - Asegurando IDs Únicos
   const [categories, setCategories] = useState<Category[]>(() => {
     const saved = localStorage.getItem('categories_v2');
     if (saved) return JSON.parse(saved);
     
-    // Si no hay V2, intentamos migrar de la lista de strings antigua
     const oldStrings = JSON.parse(localStorage.getItem('categories') || '[]');
     const merged = Array.from(new Set(['Catálogo', ...DEFAULT_CATEGORIES.filter(c => c !== 'Todo'), ...oldStrings]));
     
     return merged.map(name => ({
-      id: Math.random().toString(36).substr(2, 9),
+      id: generateUniqueId(),
       name: name,
       color: name === 'Catálogo' ? '#0ea5e9' : '#64748b'
     }));
   });
 
+  // MIGRACIÓN DE PRODUCTOS Y VARIANTES (FASE B)
   const [products, setProducts] = useState<Product[]>(() => {
     const saved = JSON.parse(localStorage.getItem('products') || '[]');
     return saved.map((p: any) => ({
       ...p,
+      id: p.id || generateUniqueId(),
       categories: p.categories || [p.category || 'Catálogo'],
-      variants: p.variants || [],
+      variants: (p.variants || []).map((v: any) => ({
+        ...v,
+        id: v.id || ('VAR-' + generateUniqueId())
+      })),
       pricingRules: p.pricingRules || [],
       history: p.history || [],
       warehouseId: p.warehouseId || (p.batches && p.batches[0]?.warehouseId) || 'wh-default'
@@ -137,7 +149,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           notify("La categoría ya existe", "error");
           return;
         }
-        const newCat: Category = { id: Math.random().toString(36).substr(2, 9), name, color };
+        const newCat: Category = { id: generateUniqueId(), name, color };
         setCategories([...categories, newCat]);
         notify("Categoría creada", "success");
       },
@@ -147,7 +159,6 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         if (!cat) return;
         if (cat.name === 'Catálogo') { notify("No se puede eliminar la categoría base", "error"); return; }
         
-        // REGLA OBLIGATORIA: Bloquear si hay productos con stock total > 0 vinculados
         const hasActiveProducts = products.some(p => {
           const isLinked = p.categories.includes(cat.name);
           if (!isLinked) return false;
@@ -160,7 +171,6 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           return;
         }
 
-        // Si se permite, desvinculamos de los productos con stock 0 y eliminamos
         setProducts(products.map(p => ({
           ...p,
           categories: p.categories.filter(c => c !== cat.name)

@@ -10,6 +10,14 @@ import {
 
 const COLORS = ['#0ea5e9', '#ef4444', '#10b981', '#f59e0b', '#6366f1', '#ec4899', '#64748b', '#000000'];
 
+// UTILIDAD DE GENERACIÓN DE IDS ÚNICOS E IRREPETIBLES (FASE B)
+const generateUniqueId = () => {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID().toUpperCase();
+  }
+  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`.toUpperCase();
+};
+
 export const Inventory: React.FC = () => {
   const { 
     warehouses, addWarehouse, updateWarehouse, deleteWarehouse, isItemLocked, 
@@ -43,7 +51,6 @@ export const Inventory: React.FC = () => {
     return products.filter(p => p.warehouseId === activeWarehouseId);
   }, [products, activeWarehouseId]);
 
-  // FIX: Cálculo de stock total consolidado (Madre + Variantes)
   const computeTotalStock = (p: Product) => {
     const parentStock = p.stock || 0;
     const variantsStock = p.variants?.reduce((acc, v) => acc + (v.stock || 0), 0) || 0;
@@ -52,7 +59,7 @@ export const Inventory: React.FC = () => {
 
   const handleOpenNewProduct = () => {
     setEditingProduct({
-      id: Math.random().toString(36).substr(2, 9).toUpperCase(),
+      id: generateUniqueId(),
       warehouseId: activeWarehouseId,
       name: '',
       sku: '',
@@ -64,7 +71,7 @@ export const Inventory: React.FC = () => {
       pricingRules: [],
       minStockAlert: 5,
       history: [{
-        id: Date.now().toString(),
+        id: generateUniqueId(),
         timestamp: new Date().toISOString(),
         type: 'CREATED',
         userName: currentUser?.name || 'Sistema',
@@ -76,7 +83,6 @@ export const Inventory: React.FC = () => {
   };
 
   const handleOpenEditProduct = (p: Product) => {
-    // Clonación profunda para evitar mutaciones directas del estado global
     setEditingProduct(JSON.parse(JSON.stringify(p)));
     setProdTab('DETAILS');
     setIsProdModalOpen(true);
@@ -101,18 +107,6 @@ export const Inventory: React.FC = () => {
     }
   };
 
-  const logChange = (type: AuditLog['type'], details: string) => {
-    if (!editingProduct) return;
-    const newLog: AuditLog = {
-      id: Math.random().toString(36).substr(2, 5),
-      timestamp: new Date().toISOString(),
-      type,
-      userName: currentUser?.name || 'Sistema',
-      details
-    };
-    setEditingProduct({ ...editingProduct, history: [newLog, ...(editingProduct.history || [])] });
-  };
-
   const handleSaveProduct = () => {
     if (!editingProduct?.name || (editingProduct.cost || 0) <= 0) {
       notify("Nombre y costo (>0) obligatorios", "error");
@@ -127,29 +121,37 @@ export const Inventory: React.FC = () => {
     notify("Datos consolidados", "success");
   };
 
-  // FIX VARIANTES: Handler reactivo funcional
+  // FIX VARIANTES: FUNCIONAL ACTUALIZACIÓN ÚNICA (FASE A)
   const addVariant = () => {
     if (tier === 'GOLD') { notify("Actualice a SAPPHIRE para usar variantes", "error"); return; }
     if (!editingProduct) return;
 
+    const newVName = `Variante ${editingProduct.variants?.length ? editingProduct.variants.length + 1 : 1}`;
     const newV: ProductVariant = {
-        id: 'VAR-' + Math.random().toString(36).substr(2, 5).toUpperCase(),
-        name: `Variante ${editingProduct.variants?.length ? editingProduct.variants.length + 1 : 1}`,
+        id: 'VAR-' + generateUniqueId(),
+        name: newVName,
         cost: editingProduct.cost || 0,
         price: editingProduct.price || 0,
         stock: 0,
         sku: ''
     };
     
+    const newLog: AuditLog = {
+      id: generateUniqueId(),
+      timestamp: new Date().toISOString(),
+      type: 'VARIANT_ADDED',
+      userName: currentUser?.name || 'Sistema',
+      details: `Añadida variante: ${newVName}`
+    };
+
     setEditingProduct(prev => prev ? ({
         ...prev,
-        variants: [...(prev.variants || []), newV]
+        variants: [...(prev.variants || []), newV],
+        history: [newLog, ...(prev.history || [])]
     }) : null);
-    
-    logChange('VARIANT_ADDED', `Añadida variante: ${newV.name}`);
   };
 
-  // FIX REGLAS: Handler reactivo funcional con límite GOLD
+  // FIX REGLAS: FUNCIONAL ACTUALIZACIÓN ÚNICA (FASE A)
   const addPriceRule = () => {
     if (!editingProduct) return;
     const currentRules = editingProduct.pricingRules || [];
@@ -160,19 +162,26 @@ export const Inventory: React.FC = () => {
     }
     
     const newRule: PricingRule = {
-        id: 'RULE-' + Math.random().toString(36).substr(2, 5).toUpperCase(),
+        id: 'RULE-' + generateUniqueId(),
         targetId: 'PARENT',
         minQuantity: 2,
         maxQuantity: 10,
         newPrice: (editingProduct.price || 0) * 0.9
     };
     
+    const newLog: AuditLog = {
+      id: generateUniqueId(),
+      timestamp: new Date().toISOString(),
+      type: 'RULE_ADDED',
+      userName: currentUser?.name || 'Sistema',
+      details: `Nueva regla de precio creada`
+    };
+
     setEditingProduct(prev => prev ? ({
         ...prev,
-        pricingRules: [...(prev.pricingRules || []), newRule]
+        pricingRules: [...(prev.pricingRules || []), newRule],
+        history: [newLog, ...(prev.history || [])]
     }) : null);
-    
-    logChange('RULE_ADDED', `Nueva regla de precio creada`);
   };
 
   // COMPONENTE GESTOR CATEGORÍAS (MODAL)
@@ -410,7 +419,6 @@ export const Inventory: React.FC = () => {
                                 <div className="space-y-1"><label className="text-[10px] font-black text-gray-400 uppercase ml-4">Costo Unitario *</label><div className="relative"><DollarSign className="absolute left-5 top-5 text-gray-300" size={20}/><input type="number" className="w-full bg-white border-2 border-gray-100 p-5 pl-14 rounded-3xl font-black text-xl" value={editingProduct.cost} onChange={e => setEditingProduct({...editingProduct, cost: parseFloat(e.target.value) || 0})} /></div></div>
                                 <div className="space-y-1"><label className="text-[10px] font-black text-gray-400 uppercase ml-4">Precio Venta *</label><div className="relative"><DollarSign className="absolute left-5 top-5 text-brand-300" size={20}/><input type="number" className="w-full bg-white border-2 border-gray-100 p-5 pl-14 rounded-3xl font-black text-xl text-brand-600" value={editingProduct.price} onChange={e => setEditingProduct({...editingProduct, price: parseFloat(e.target.value) || 0})} /></div></div>
                                 
-                                {/* RESTAURAR INDICADOR DE % GANANCIA (EXACTAMENTE COMO ESTABA) */}
                                 <div className="md:col-span-2 bg-slate-900 p-6 rounded-[2.5rem] flex items-center justify-between border-b-4 border-brand-500 shadow-xl">
                                     <div>
                                         <p className="text-[9px] font-black text-brand-400 uppercase tracking-[0.2em] mb-1">Margen de Rentabilidad</p>
@@ -550,7 +558,7 @@ export const Inventory: React.FC = () => {
             <div className="space-y-4">
               <input className="w-full bg-slate-50 border-none p-6 rounded-3xl font-bold outline-none" placeholder="Nombre" value={newWh.name} onChange={e => setNewWh({...newWh, name: e.target.value})} />
               <input className="w-full bg-slate-50 border-none p-6 rounded-3xl font-bold outline-none" placeholder="Ubicación" value={newWh.location} onChange={e => setNewWh({...newWh, location: e.target.value})} />
-              <button onClick={() => { if(newWh.name) { addWarehouse({...newWh, id: Math.random().toString(36).substr(2, 9)} as Warehouse); setIsWhModalOpen(false); setNewWh({name:'', location:''}); } }} className="w-full bg-slate-900 text-white font-black py-6 rounded-3xl mt-6 uppercase tracking-widest text-xs">Registrar Almacén</button>
+              <button onClick={() => { if(newWh.name) { addWarehouse({...newWh, id: generateUniqueId()} as Warehouse); setIsWhModalOpen(false); setNewWh({name:'', location:''}); } }} className="w-full bg-slate-900 text-white font-black py-6 rounded-3xl mt-6 uppercase tracking-widest text-xs">Registrar Almacén</button>
               <button onClick={() => setIsWhModalOpen(false)} className="w-full text-slate-400 font-black py-4 uppercase tracking-widest text-[10px]">Cerrar</button>
             </div>
           </div>
