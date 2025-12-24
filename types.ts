@@ -109,7 +109,6 @@ export interface BusinessConfig {
   license?: LicenseData;
   security: SecurityConfig;
   lastUpdated?: string;
-  // Nuevos Campos
   googleAccount?: GoogleAccountStub;
   posTerminals?: POSStoreTerminal[];
   peripherals?: PeripheralsSettings;
@@ -172,16 +171,18 @@ export interface Batch {
 
 export interface ProductVariant {
   id: string;
-  type: string;
-  value: string;
+  name: string;
   price: number;
+  cost: number;
   stock: number;
   sku: string;
+  image?: string;
+  expiryDate?: string;
 }
 
 export interface PricingRule {
   id: string;
-  targetId?: string;
+  targetId: 'PARENT' | string; // 'PARENT' o el ID de una variante
   minQuantity: number;
   maxQuantity: number;
   newPrice: number;
@@ -190,8 +191,7 @@ export interface PricingRule {
 export interface AuditLog {
   id: string;
   timestamp: string;
-  action: string;
-  userId: string;
+  type: 'CREATED' | 'UPDATED' | 'DELETED' | 'STOCK_ADJUST' | 'VARIANT_ADDED' | 'VARIANT_REMOVED' | 'RULE_ADDED' | 'RULE_REMOVED';
   userName: string;
   details: string;
 }
@@ -202,22 +202,29 @@ export interface Warehouse {
   location: string;
 }
 
-export interface Product {
+export interface Category {
   id: string;
   name: string;
-  category: string;
+  color: string;
+}
+
+export interface Product {
+  id: string;
+  warehouseId: string;
+  name: string;
+  categories: string[];
   price: number;
   cost: number;
-  sku: string;
-  barcode?: string;
+  sku: string; // SKU o Barcode
+  stock: number;
   minStockAlert: number;
   image?: string;
-  batches?: Batch[];
-  variants?: ProductVariant[];
-  isService?: boolean;
   expiryDate?: string;
-  history?: AuditLog[];
-  pricingRules?: PricingRule[];
+  isService?: boolean;
+  variants: ProductVariant[];
+  pricingRules: PricingRule[];
+  history: AuditLog[];
+  batches?: Batch[];
 }
 
 export interface Client {
@@ -283,8 +290,10 @@ export interface StoreContextType {
   addWarehouse: (warehouse: Warehouse) => void;
   updateWarehouse: (warehouse: Warehouse) => void;
   deleteWarehouse: (id: string) => void;
-  categories: string[];
-  addCategory: (name: string) => void;
+  categories: Category[];
+  addCategory: (name: string, color?: string) => void;
+  updateCategory: (category: Category) => void;
+  deleteCategory: (id: string) => void;
   coupons: Coupon[];
   addCoupon: (coupon: Coupon) => void;
   deleteCoupon: (id: string) => void;
@@ -295,7 +304,7 @@ export interface StoreContextType {
   executeLedgerTransaction: (entry: Partial<LedgerEntry>) => boolean;
   products: Product[];
   addProduct: (product: Product) => void;
-  updateProduct: (product: Product, auditAction?: string) => void;
+  updateProduct: (product: Product) => void;
   deleteProduct: (id: string) => void;
   cart: any[];
   addToCart: (product: any, variantId?: string) => void;

@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useMemo } from 'react';
 import { useStore } from '../context/StoreContext';
 import { CATEGORIES } from '../constants';
@@ -38,7 +37,8 @@ export const POS: React.FC = () => {
   const cartTotal = Math.max(0, cartSubtotal - cartDiscount);
 
   const filteredProducts = useMemo(() => products.filter(p => {
-    const mCat = selectedCategory === 'Todo' || p.category === selectedCategory;
+    // FIX: Use p.categories.includes since categories is an array in Product type
+    const mCat = selectedCategory === 'Todo' || p.categories.includes(selectedCategory);
     const mSrc = p.name.toLowerCase().includes(searchQuery.toLowerCase()) || p.sku.toLowerCase().includes(searchQuery.toLowerCase());
     return mCat && mSrc;
   }), [products, selectedCategory, searchQuery]);
@@ -66,7 +66,8 @@ export const POS: React.FC = () => {
               if (existing) {
                   updateQuantity(existing.cartId, 1);
               } else {
-                  storeAddToCart({ ...p, price: variant.price, finalPrice: variant.price, selectedVariantId: variantId, name: `${p.name} (${variant.value})` });
+                  // FIX: Use variant.name instead of variant.value as per ProductVariant type definition
+                  storeAddToCart({ ...p, price: variant.price, finalPrice: variant.price, selectedVariantId: variantId, name: `${p.name} (${variant.name})` });
               }
           }
       } else {

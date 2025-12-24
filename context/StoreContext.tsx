@@ -2,7 +2,7 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { 
   StoreContextType, View, CurrencyConfig, LedgerEntry, User, 
-  BusinessConfig, Coupon, Offer, Role, Product, Client, ClientGroup, Ticket, Sale, Warehouse, LicenseTier, POSStoreTerminal
+  BusinessConfig, Coupon, Offer, Role, Product, Client, ClientGroup, Ticket, Sale, Warehouse, LicenseTier, POSStoreTerminal, Category
 } from '../types';
 import { MOCK_USERS, DEFAULT_BUSINESS_CONFIG, CATEGORIES as DEFAULT_CATEGORIES } from '../constants';
 import { PermissionEngine } from '../security/PermissionEngine';
@@ -10,7 +10,6 @@ import { AlertCircle, CheckCircle } from 'lucide-react';
 
 const StoreContext = createContext<StoreContextType | undefined>(undefined);
 
-// Helper para hashing de PIN (SHA-256)
 const hashPin = async (pin: string): Promise<string> => {
   const msgUint8 = new TextEncoder().encode(pin + "capibario-tpv-salt"); 
   const hashBuffer = await crypto.subtle.digest('SHA-256', msgUint8);
@@ -18,9 +17,6 @@ const hashPin = async (pin: string): Promise<string> => {
   return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
 };
 
-const WEAK_PINS = ['0000', '1111', '2222', '3333', '4444', '5555', '6666', '7777', '8888', '9999', '1234', '4321', '0123', '3210'];
-
-// Divisas por defecto requeridas
 const DEFAULT_CURRENCIES: CurrencyConfig[] = [
   { code: 'CUP', symbol: '₱', rate: 1, allowedPaymentMethods: ['CASH', 'TRANSFER'], isBase: true },
   { code: 'USD', symbol: '$', rate: 330, allowedPaymentMethods: ['CASH', 'TRANSFER', 'CARD'] },
@@ -36,8 +32,6 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   const [users, setUsers] = useState<User[]>(() => JSON.parse(localStorage.getItem('users') || "[]"));
   const [businessConfig, setBusinessConfig] = useState<BusinessConfig>(() => JSON.parse(localStorage.getItem('businessConfig') || JSON.stringify(DEFAULT_BUSINESS_CONFIG)));
-  
-  // Inicialización de divisas con valores por defecto si el storage está vacío
   const [currencies, setCurrencies] = useState<CurrencyConfig[]>(() => {
     const saved = localStorage.getItem('currencies');
     if (saved && saved !== '[]') return JSON.parse(saved);
@@ -46,20 +40,39 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   const [warehouses, setWarehouses] = useState<Warehouse[]>(() => {
     const saved = JSON.parse(localStorage.getItem('warehouses') || '[]');
-    if (saved.length === 0) {
-      return [{ id: 'wh-default', name: 'Almacén por defecto', location: 'Principal' }];
-    }
+    if (saved.length === 0) return [{ id: 'wh-default', name: 'Almacén por defecto', location: 'Principal' }];
     return saved;
   });
 
-  const [categories, setCategories] = useState<string[]>(() => {
-    const saved = JSON.parse(localStorage.getItem('categories') || '[]');
-    const merged = Array.from(new Set([...DEFAULT_CATEGORIES, ...saved, 'Catálogo']));
-    return merged;
+  // MIGRACIÓN Y GESTIÓN DE CATEGORÍAS V2
+  const [categories, setCategories] = useState<Category[]>(() => {
+    const saved = localStorage.getItem('categories_v2');
+    if (saved) return JSON.parse(saved);
+    
+    // Si no hay V2, intentamos migrar de la lista de strings antigua
+    const oldStrings = JSON.parse(localStorage.getItem('categories') || '[]');
+    const merged = Array.from(new Set(['Catálogo', ...DEFAULT_CATEGORIES.filter(c => c !== 'Todo'), ...oldStrings]));
+    
+    return merged.map(name => ({
+      id: Math.random().toString(36).substr(2, 9),
+      name: name,
+      color: name === 'Catálogo' ? '#0ea5e9' : '#64748b'
+    }));
+  });
+
+  const [products, setProducts] = useState<Product[]>(() => {
+    const saved = JSON.parse(localStorage.getItem('products') || '[]');
+    return saved.map((p: any) => ({
+      ...p,
+      categories: p.categories || [p.category || 'Catálogo'],
+      variants: p.variants || [],
+      pricingRules: p.pricingRules || [],
+      history: p.history || [],
+      warehouseId: p.warehouseId || (p.batches && p.batches[0]?.warehouseId) || 'wh-default'
+    }));
   });
 
   const [ledger, setLedger] = useState<LedgerEntry[]>(() => JSON.parse(localStorage.getItem('ledger') || '[]'));
-  const [products, setProducts] = useState<Product[]>(() => JSON.parse(localStorage.getItem('products') || '[]'));
   const [sales, setSales] = useState<Sale[]>(() => JSON.parse(localStorage.getItem('sales') || '[]'));
   const [clients, setClients] = useState<Client[]>(() => JSON.parse(localStorage.getItem('clients') || '[]'));
   const [clientGroups, setClientGroups] = useState<ClientGroup[]>(() => JSON.parse(localStorage.getItem('clientGroups') || '[]'));
@@ -78,47 +91,13 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   const getCurrentTier = useCallback((): LicenseTier => (businessConfig.license?.tier || 'GOLD') as LicenseTier, [businessConfig.license]);
 
-  // Sincronización de divisa base con Empresa y Lógica de arranque para Puntos de Venta
-  useEffect(() => {
-    const defaultWarehouseId = warehouses[0]?.id || 'wh-default';
-    let updatedBiz = false;
-    let newTerminals = [...(businessConfig.posTerminals || [])];
-
-    if (newTerminals.length === 0) {
-      newTerminals = [{ id: 'pos-1', name: 'Punto de Venta 1', warehouseId: defaultWarehouseId }];
-      updatedBiz = true;
-    } else {
-      newTerminals = newTerminals.map(t => {
-        if (!t.warehouseId) {
-          updatedBiz = true;
-          return { ...t, warehouseId: defaultWarehouseId };
-        }
-        return t;
-      });
-    }
-
-    if (updatedBiz) {
-      setBusinessConfig(prev => ({ ...prev, posTerminals: newTerminals }));
-    }
-
-    // Sincronización: asegurar que primaryCurrency existe en currencies
-    const baseCode = businessConfig.primaryCurrency;
-    const exists = currencies.find(c => c.code === baseCode);
-    if (!exists) {
-      setCurrencies(prev => [...prev, { code: baseCode, symbol: '$', rate: 1, allowedPaymentMethods: ['CASH', 'TRANSFER'] }]);
-    } else if (exists.rate !== 1) {
-      // La base debe tener tasa 1 siempre
-      setCurrencies(prev => prev.map(c => c.code === baseCode ? { ...c, rate: 1 } : c));
-    }
-  }, [warehouses.length, businessConfig.primaryCurrency]);
-
   useEffect(() => {
     localStorage.setItem('currentUser', JSON.stringify(currentUser));
     localStorage.setItem('users', JSON.stringify(users));
     localStorage.setItem('businessConfig', JSON.stringify(businessConfig));
     localStorage.setItem('currencies', JSON.stringify(currencies));
     localStorage.setItem('warehouses', JSON.stringify(warehouses));
-    localStorage.setItem('categories', JSON.stringify(categories));
+    localStorage.setItem('categories_v2', JSON.stringify(categories));
     localStorage.setItem('products', JSON.stringify(products));
     localStorage.setItem('sales', JSON.stringify(sales));
     localStorage.setItem('ledger', JSON.stringify(ledger));
@@ -128,24 +107,10 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     localStorage.setItem('offers', JSON.stringify(offers));
   }, [currentUser, users, businessConfig, currencies, warehouses, categories, products, sales, ledger, clients, clientGroups, coupons, offers]);
 
-  const validatePinSecurity = async (pin: string, excludeUserId?: string): Promise<{valid: boolean, error?: string}> => {
-    if (pin.length !== 4) return { valid: false, error: "El PIN debe tener 4 dígitos." };
-    if (WEAK_PINS.includes(pin)) return { valid: false, error: "PIN demasiado débil." };
-    
-    const hashed = await hashPin(pin);
-    const exists = users.some(u => u.pin === hashed && u.id !== excludeUserId);
-    if (exists) return { valid: false, error: "PIN ya en uso." };
-    
-    return { valid: true };
-  };
-
   const login = async (pin: string): Promise<boolean> => {
     const hashed = await hashPin(pin);
     const u = users.find(u => u.pin === hashed);
-    if (u) {
-      setCurrentUser(u);
-      return true;
-    }
+    if (u) { setCurrentUser(u); return true; }
     notify("PIN Incorrecto", "error");
     return false;
   };
@@ -156,33 +121,56 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       currencies, warehouses, categories, ledger, products, sales, clients, coupons, offers,
       addWarehouse: (w) => {
         if (!PermissionEngine.enforcePlanLimits('WAREHOUSES', warehouses.length, getCurrentTier())) {
-          notify(`Límite de almacenes alcanzado para el plan ${getCurrentTier()}. Mejore a SAPPHIRE/PLATINUM.`, 'error');
+          notify(`Límite de almacenes alcanzado para el plan ${getCurrentTier()}.`, 'error');
           return;
         }
         setWarehouses([...warehouses, w]);
       },
       updateWarehouse: (w) => setWarehouses(warehouses.map(wh => wh.id === w.id ? w : wh)),
       deleteWarehouse: (id) => {
-        if (warehouses.length <= 1) {
-          notify("Debe existir al menos un almacén.", "error");
+        if (warehouses.length <= 1) { notify("Debe existir al menos un almacén.", "error"); return; }
+        setWarehouses(warehouses.filter(w => w.id !== id));
+        notify("Almacén eliminado", "success");
+      },
+      addCategory: (name, color = '#64748b') => {
+        if (categories.some(c => c.name.toLowerCase() === name.toLowerCase())) {
+          notify("La categoría ya existe", "error");
           return;
         }
-        setWarehouses(warehouses.filter(w => w.id !== id));
+        const newCat: Category = { id: Math.random().toString(36).substr(2, 9), name, color };
+        setCategories([...categories, newCat]);
+        notify("Categoría creada", "success");
       },
-      addCategory: (c) => {
-        if (!categories.includes(c)) setCategories([...categories, c]);
+      updateCategory: (cat) => setCategories(categories.map(c => c.id === cat.id ? cat : c)),
+      deleteCategory: (id) => {
+        const cat = categories.find(c => c.id === id);
+        if (!cat) return;
+        if (cat.name === 'Catálogo') { notify("No se puede eliminar la categoría base", "error"); return; }
+        
+        // REGLA OBLIGATORIA: Bloquear si hay productos con stock total > 0 vinculados
+        const hasActiveProducts = products.some(p => {
+          const isLinked = p.categories.includes(cat.name);
+          if (!isLinked) return false;
+          const totalStock = (p.stock || 0) + (p.variants?.reduce((acc, v) => acc + (v.stock || 0), 0) || 0);
+          return totalStock > 0;
+        });
+
+        if (hasActiveProducts) {
+          notify("No se puede eliminar: Hay productos con stock activo vinculados", "error");
+          return;
+        }
+
+        // Si se permite, desvinculamos de los productos con stock 0 y eliminamos
+        setProducts(products.map(p => ({
+          ...p,
+          categories: p.categories.filter(c => c !== cat.name)
+        })));
+        setCategories(categories.filter(c => c.id !== id));
+        notify("Categoría eliminada", "success");
       },
       addUser: async (u) => {
-        const validation = await validatePinSecurity(u.pin);
-        if (!validation.valid) { notify(validation.error!, "error"); return; }
         const hashed = await hashPin(u.pin);
         setUsers([...users, { ...u, pin: hashed }]);
-      },
-      updateUserPin: async (id, pin) => {
-        const validation = await validatePinSecurity(pin, id);
-        if (!validation.valid) { notify(validation.error!, "error"); return; }
-        const hashed = await hashPin(pin);
-        setUsers(users.map(u => u.id === id ? { ...u, pin: hashed } : u));
       },
       deleteUser: (id) => setUsers(users.filter(u => u.id !== id)),
       login,
@@ -204,7 +192,6 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       },
       notification, clearNotification: () => setNotification(null),
       notify,
-      addClient: (c) => setClients([...clients, c]),
       addProduct: (p) => setProducts([...products, p]),
       updateProduct: (p) => setProducts(products.map(prod => prod.id === p.id ? p : prod)),
       deleteProduct: (id) => setProducts(products.filter(p => p.id !== id)),
