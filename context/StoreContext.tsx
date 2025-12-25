@@ -136,12 +136,12 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           notify(`Límite de almacenes alcanzado para el plan ${getCurrentTier()}.`, 'error');
           return;
         }
-        setWarehouses([...warehouses, w]);
+        setWarehouses(prev => [...prev, w]);
       },
-      updateWarehouse: (w) => setWarehouses(warehouses.map(wh => wh.id === w.id ? w : wh)),
+      updateWarehouse: (w) => setWarehouses(prev => prev.map(wh => wh.id === w.id ? w : wh)),
       deleteWarehouse: (id) => {
         if (warehouses.length <= 1) { notify("Debe existir al menos un almacén.", "error"); return; }
-        setWarehouses(warehouses.filter(w => w.id !== id));
+        setWarehouses(prev => prev.filter(w => w.id !== id));
         notify("Almacén eliminado", "success");
       },
       addCategory: (name, color = '#64748b') => {
@@ -150,10 +150,10 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           return;
         }
         const newCat: Category = { id: generateUniqueId(), name, color };
-        setCategories([...categories, newCat]);
+        setCategories(prev => [...prev, newCat]);
         notify("Categoría creada", "success");
       },
-      updateCategory: (cat) => setCategories(categories.map(c => c.id === cat.id ? cat : c)),
+      updateCategory: (cat) => setCategories(prev => prev.map(c => c.id === cat.id ? cat : c)),
       deleteCategory: (id) => {
         const cat = categories.find(c => c.id === id);
         if (!cat) return;
@@ -171,18 +171,18 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           return;
         }
 
-        setProducts(products.map(p => ({
+        setProducts(prev => prev.map(p => ({
           ...p,
           categories: p.categories.filter(c => c !== cat.name)
         })));
-        setCategories(categories.filter(c => c.id !== id));
+        setCategories(prev => prev.filter(c => c.id !== id));
         notify("Categoría eliminada", "success");
       },
       addUser: async (u) => {
         const hashed = await hashPin(u.pin);
-        setUsers([...users, { ...u, pin: hashed }]);
+        setUsers(prev => [...prev, { ...u, pin: hashed }]);
       },
-      deleteUser: (id) => setUsers(users.filter(u => u.id !== id)),
+      deleteUser: (id) => setUsers(prev => prev.filter(u => u.id !== id)),
       login,
       logout: () => { setCurrentUser(null); setView(View.POS); },
       checkModuleAccess: (mid) => PermissionEngine.validateModuleAccess(mid as View, getCurrentTier(), businessConfig.security),
@@ -202,17 +202,17 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       },
       notification, clearNotification: () => setNotification(null),
       notify,
-      addProduct: (p) => setProducts([...products, p]),
-      updateProduct: (p) => setProducts(products.map(prod => prod.id === p.id ? p : prod)),
-      deleteProduct: (id) => setProducts(products.filter(p => p.id !== id)),
-      cart, clearCart: () => setCart([]), addToCart: (p) => setCart([...cart, p]),
-      removeFromCart: (id) => setCart(cart.filter(i => i.cartId !== id)),
+      addProduct: (p) => setProducts(prev => [...prev, p]),
+      updateProduct: (p) => setProducts(prev => prev.map(prod => prod.id === p.id ? p : prod)),
+      deleteProduct: (id) => setProducts(prev => prev.filter(p => p.id !== id)),
+      cart, clearCart: () => setCart([]), addToCart: (p) => setCart(prev => [...prev, p]),
+      removeFromCart: (id) => setCart(prev => prev.filter(i => i.cartId !== id)),
       posCurrency, setPosCurrency, activeShift, 
       openShift: () => setActiveShift({ openedAt: new Date().toISOString(), openedBy: currentUser?.name }),
       closeShift: () => setActiveShift(null),
-      addCurrency: (c) => setCurrencies([...currencies, c]),
-      updateCurrency: (c) => setCurrencies(currencies.map(curr => curr.code === c.code ? c : curr)),
-      deleteCurrency: (code) => setCurrencies(currencies.filter(c => c.code !== code)),
+      addCurrency: (c) => setCurrencies(prev => [...prev, c]),
+      updateCurrency: (c) => setCurrencies(prev => prev.map(curr => curr.code === c.code ? c : curr)),
+      deleteCurrency: (code) => setCurrencies(prev => prev.filter(c => c.code !== code)),
       isItemLocked: (key, idx) => PermissionEngine.isItemSoftLocked(key, idx, getCurrentTier()),
       rates: currencies.reduce((acc, c) => ({ ...acc, [c.code]: c.rate }), {})
     } as any}>

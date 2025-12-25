@@ -186,14 +186,23 @@ export interface PricingRule {
   minQuantity: number;
   maxQuantity: number;
   newPrice: number;
+  isActive?: boolean;
+  startDate?: string;
+  endDate?: string;
 }
 
 export interface AuditLog {
   id: string;
   timestamp: string;
-  type: 'CREATED' | 'UPDATED' | 'DELETED' | 'STOCK_ADJUST' | 'VARIANT_ADDED' | 'VARIANT_REMOVED' | 'RULE_ADDED' | 'RULE_REMOVED';
+  type: 'CREATED' | 'UPDATED' | 'DELETED' | 'STOCK_ADJUST' | 'VARIANT_ADDED' | 'VARIANT_REMOVED' | 'RULE_ADDED' | 'RULE_REMOVED' | 'VARIANT_UPDATED' | 'RULE_UPDATED';
   userName: string;
   details: string;
+  entityType?: 'PRODUCT' | 'VARIANT' | 'PRICE_RULE';
+  entityId?: string;
+  details_raw?: {
+    before?: any;
+    after?: any;
+  };
 }
 
 export interface Warehouse {
