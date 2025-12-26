@@ -167,25 +167,25 @@ export const POS: React.FC = () => {
   return (
     <div className="flex h-screen bg-gray-100 overflow-hidden relative font-sans animate-in fade-in duration-500">
         
-        {/* --- COLUMNA IZQUIERDA: CATÁLOGO (GRID 7x4) --- */}
-        <div className="flex-1 flex flex-col h-full bg-gray-50 border-r border-gray-200">
-            {/* Header POS: Búsqueda y Monedas */}
-            <div className="bg-white p-4 border-b border-gray-100 flex flex-col md:flex-row gap-4 items-center">
-                <div className="relative flex-1 group">
-                    <Search className="absolute left-4 top-4 text-slate-300 group-focus-within:text-brand-500 transition-colors" size={18} />
+        {/* --- COLUMNA IZQUIERDA: CATÁLOGO (GRID 7x4 Desktop, 4 columnas Móvil) --- */}
+        <div className="flex-1 flex flex-col h-full bg-gray-50 border-r border-gray-200 min-w-0">
+            {/* Header POS: Búsqueda y Monedas (Responsive-safe) */}
+            <div className="bg-white p-3 md:p-4 border-b border-gray-100 flex flex-col md:flex-row gap-3 md:gap-4 items-center shrink-0">
+                <div className="relative flex-1 group w-full">
+                    <Search className="absolute left-4 top-3.5 md:top-4 text-slate-300 group-focus-within:text-brand-500 transition-colors" size={16} />
                     <input 
-                        className="w-full bg-gray-100 border-none p-4 pl-12 rounded-2xl font-bold text-sm outline-none focus:ring-2 focus:ring-brand-500/20" 
-                        placeholder="Buscar por Nombre, SKU o Precio..." 
+                        className="w-full bg-gray-100 border-none p-3 md:p-4 pl-10 md:pl-12 rounded-xl md:rounded-2xl font-bold text-xs md:text-sm outline-none focus:ring-2 focus:ring-brand-500/20" 
+                        placeholder="Buscar..." 
                         value={searchQuery}
                         onChange={e => setSearchQuery(e.target.value)}
                     />
                 </div>
-                <div className="flex bg-gray-100 p-1 rounded-2xl gap-1">
+                <div className="flex bg-gray-100 p-1 rounded-xl md:rounded-2xl gap-1 w-full md:w-auto overflow-x-auto scrollbar-hide">
                     {currencies.map(c => (
                         <button 
                             key={c.code} 
                             onClick={() => setPosCurrency(c.code)}
-                            className={`px-4 py-2.5 rounded-xl text-[10px] font-black transition-all ${posCurrency === c.code ? 'bg-white text-brand-600 shadow-sm' : 'text-slate-400 hover:bg-gray-200'}`}
+                            className={`px-3 md:px-4 py-2 md:py-2.5 rounded-lg md:rounded-xl text-[9px] md:text-[10px] font-black transition-all flex-1 md:flex-none ${posCurrency === c.code ? 'bg-white text-brand-600 shadow-sm' : 'text-slate-400 hover:bg-gray-200'}`}
                         >
                             {c.code}
                         </button>
@@ -193,22 +193,22 @@ export const POS: React.FC = () => {
                 </div>
             </div>
 
-            {/* Categorías */}
-            <div className="bg-white px-4 pb-4 border-b border-gray-100 flex gap-2 overflow-x-auto scrollbar-hide shrink-0">
+            {/* Categorías (Visible y con scroll) */}
+            <div className="bg-white px-3 md:px-4 pb-3 md:pb-4 border-b border-gray-100 flex gap-2 overflow-x-auto scrollbar-hide shrink-0">
                 {['Todo', ...categories.map(c => c.name)].map(cat => (
                     <button 
                         key={cat} 
                         onClick={() => setSelectedCategory(cat)}
-                        className={`px-6 py-2.5 rounded-xl whitespace-nowrap text-[10px] font-black uppercase tracking-widest transition-all ${selectedCategory === cat ? 'bg-slate-900 text-white shadow-lg' : 'bg-gray-50 text-slate-400 hover:bg-gray-100'}`}
+                        className={`px-4 md:px-6 py-2 md:py-2.5 rounded-lg md:rounded-xl whitespace-nowrap text-[9px] md:text-[10px] font-black uppercase tracking-widest transition-all ${selectedCategory === cat ? 'bg-slate-900 text-white shadow-lg' : 'bg-gray-50 text-slate-400 hover:bg-gray-100'}`}
                     >
                         {cat}
                     </button>
                 ))}
             </div>
 
-            {/* Catálogo Grid 7x4 Desktop */}
-            <div className="flex-1 overflow-y-auto p-4 custom-scrollbar">
-                <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3">
+            {/* Catálogo Grid 7x4 Desktop / 4 columnas Móvil */}
+            <div className="flex-1 overflow-y-auto p-2 md:p-4 custom-scrollbar">
+                <div className="grid grid-cols-4 md:grid-cols-4 lg:grid-cols-7 gap-1.5 md:gap-3">
                     {filteredProducts.map(p => {
                         const effectivePrice = convertValue(p.price);
                         const stock = p.stock || 0;
@@ -217,17 +217,17 @@ export const POS: React.FC = () => {
                                 key={p.id}
                                 onClick={() => handleAddToCart(p)}
                                 disabled={stock <= 0}
-                                className={`bg-white rounded-3xl border border-slate-100 p-2 text-left flex flex-col h-auto group hover:shadow-xl hover:-translate-y-1 transition-all ${stock <= 0 ? 'opacity-50 grayscale' : ''}`}
+                                className={`bg-white rounded-xl md:rounded-3xl border border-slate-100 p-1.5 md:p-2 text-left flex flex-col h-auto group hover:shadow-xl hover:-translate-y-1 transition-all ${stock <= 0 ? 'opacity-50 grayscale' : ''}`}
                             >
-                                <div className="aspect-square bg-gray-50 rounded-2xl mb-3 overflow-hidden relative">
-                                    {p.image ? <img src={p.image} className="w-full h-full object-cover" /> : <Layers className="w-full h-full p-4 text-slate-200" />}
-                                    <div className="absolute top-2 right-2 bg-slate-900/80 backdrop-blur-md px-2 py-0.5 rounded-full text-[8px] font-black text-white">{stock} UN</div>
-                                    {p.variants?.length > 0 && <div className="absolute bottom-2 left-2 bg-brand-500 text-white px-2 py-0.5 rounded-full text-[8px] font-black uppercase">Variantes</div>}
+                                <div className="aspect-square bg-gray-50 rounded-lg md:rounded-2xl mb-1.5 md:mb-3 overflow-hidden relative">
+                                    {p.image ? <img src={p.image} className="w-full h-full object-cover" /> : <Layers className="w-full h-full p-2 md:p-4 text-slate-200" />}
+                                    <div className="absolute top-1 right-1 bg-slate-900/80 backdrop-blur-md px-1.5 py-0.5 rounded-full text-[6px] md:text-[8px] font-black text-white">{stock} U</div>
+                                    {p.variants?.length > 0 && <div className="absolute bottom-1 left-1 bg-brand-500 text-white px-1.5 py-0.5 rounded-full text-[6px] md:text-[8px] font-black uppercase">VAR</div>}
                                 </div>
-                                <h3 className="text-[9px] font-black text-slate-800 uppercase line-clamp-2 leading-tight mb-2 flex-1 tracking-tighter">{p.name}</h3>
+                                <h3 className="text-[7px] md:text-[9px] font-black text-slate-800 uppercase line-clamp-1 md:line-clamp-2 leading-tight mb-1 md:mb-2 flex-1 tracking-tighter">{p.name}</h3>
                                 <div className="flex justify-between items-center">
-                                    <span className="font-black text-xs text-brand-600">{currencies.find(c => c.code === posCurrency)?.symbol}{effectivePrice.toFixed(2)}</span>
-                                    <div className="bg-gray-100 p-1.5 rounded-lg text-slate-400 group-hover:bg-brand-500 group-hover:text-white transition-colors"><Plus size={12}/></div>
+                                    <span className="font-black text-[9px] md:text-xs text-brand-600 truncate">{currencies.find(c => c.code === posCurrency)?.symbol}{effectivePrice.toFixed(0)}</span>
+                                    <div className="bg-gray-100 p-1 rounded-md text-slate-400 group-hover:bg-brand-500 group-hover:text-white transition-colors"><Plus size={10}/></div>
                                 </div>
                             </button>
                         );
@@ -236,7 +236,7 @@ export const POS: React.FC = () => {
             </div>
         </div>
 
-        {/* --- COLUMNA DERECHA: TICKET (SIDEBAR DESKTOP / DRAWER MÓVIL) --- */}
+        {/* --- COLUMNA DERECHA: TICKET --- */}
         <div className={`
             fixed lg:relative inset-y-0 right-0 w-full lg:w-[420px] bg-white shadow-2xl flex flex-col z-[80] transition-transform duration-500
             ${isTicketOpen ? 'translate-x-0' : 'translate-x-full lg:translate-x-0'}
