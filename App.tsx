@@ -9,7 +9,7 @@ import { Clients } from './pages/Clients';
 import { Configuration } from './pages/Configuration';
 import { Ledger } from './pages/Ledger';
 import { View } from './types';
-import { Key, Cpu, Globe, MessageCircle, AlertCircle } from 'lucide-react';
+import { Key, Cpu, Globe, MessageCircle, AlertCircle, Menu } from 'lucide-react';
 import { CAPIBARIO_LOGO } from './constants';
 
 const ActivationScreen: React.FC = () => {
@@ -106,6 +106,14 @@ const ActivationScreen: React.FC = () => {
 
 const MainLayout: React.FC = () => {
   const { view, setView, isLicenseValid, users } = useStore();
+  
+  // Estado de Sidebar
+  const [sidebarPinned, setSidebarPinned] = useState(() => localStorage.getItem('_sidebar_pinned') === 'true');
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+
+  useEffect(() => {
+    localStorage.setItem('_sidebar_pinned', String(sidebarPinned));
+  }, [sidebarPinned]);
 
   // Boot Flow Logic: Si no hay operadores, forzar vista de configuración
   useEffect(() => {
@@ -130,8 +138,24 @@ const MainLayout: React.FC = () => {
 
   return (
     <div className="flex h-screen w-screen overflow-hidden bg-gray-50">
-      <Sidebar />
+      <Sidebar 
+        isPinned={sidebarPinned} 
+        isOpen={sidebarOpen} 
+        onTogglePin={() => setSidebarPinned(!sidebarPinned)}
+        onSetOpen={setSidebarOpen}
+      />
+      
       <main className="flex-1 h-full overflow-hidden relative">
+        {/* Hamburger Flotante (Solo visible si colapsado y no pinned) */}
+        {!sidebarPinned && !sidebarOpen && (
+          <button 
+            onClick={() => setSidebarOpen(true)}
+            className="fixed top-6 left-6 z-40 bg-white p-3 rounded-2xl shadow-xl border border-gray-100 text-slate-600 hover:text-brand-500 transition-all active:scale-95 lg:flex hidden"
+          >
+            <Menu size={20} />
+          </button>
+        )}
+        
         {renderContent()}
       </main>
     </div>

@@ -138,6 +138,7 @@ export interface LedgerEntry {
 export interface Coupon {
   id: string;
   code: string;
+  name?: string;
   description: string;
   type: 'FIXED' | 'PERCENTAGE';
   value: number;
@@ -148,6 +149,27 @@ export interface Coupon {
   targetType: 'GENERAL' | 'GROUP' | 'CLIENT';
   targetId?: string;
   minInvoiceAmount?: number;
+  maxInvoiceAmount?: number;
+  productIds?: string[];
+  isSuspended?: boolean;
+  imageData?: string;
+}
+
+export interface BogoOffer {
+  id: string;
+  name: string;
+  startAt: string;
+  endAt: string;
+  status: 'ACTIVE' | 'SUSPENDED';
+  buyProductId: string;
+  buyQty: number;
+  getProductId: string;
+  getQty: number;
+  rewardType: 'FREE' | 'FIXED_PRICE' | 'PERCENT_DISCOUNT';
+  rewardValue: number;
+  notes?: string;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface Offer {
@@ -178,6 +200,7 @@ export interface ProductVariant {
   sku: string;
   image?: string;
   expiryDate?: string;
+  color?: string;
 }
 
 export interface PricingRule {
@@ -234,6 +257,16 @@ export interface Product {
   pricingRules: PricingRule[];
   history: AuditLog[];
   batches?: Batch[];
+  hidden?: boolean;
+}
+
+export interface PurchaseHistoryItem {
+  id: string;
+  saleId: string;
+  timestamp: string;
+  total: number;
+  currency: string;
+  itemsCount: number;
 }
 
 export interface Client {
@@ -243,16 +276,21 @@ export interface Client {
   ci?: string;
   birthday?: string;
   email?: string;
-  balance: number;
+  balance: number; // Deprecated but kept for compatibility
+  creditBalance: number; 
   photo?: string;
-  groupId?: string;
+  groupId: string;
+  purchaseHistory: PurchaseHistoryItem[];
+  usageHistory?: Record<string, number>;
   createdAt: string;
+  updatedAt: string;
 }
 
 export interface ClientGroup {
   id: string;
   name: string;
   color: string;
+  createdAt: string;
 }
 
 export interface PaymentDetail {
@@ -271,6 +309,7 @@ export interface Ticket {
   currency: string;
   note?: string;
   appliedCouponId?: string;
+  clientId?: string;
   timestamp: string;
 }
 
@@ -305,7 +344,12 @@ export interface StoreContextType {
   deleteCategory: (id: string) => void;
   coupons: Coupon[];
   addCoupon: (coupon: Coupon) => void;
+  updateCoupon: (coupon: Coupon) => void;
   deleteCoupon: (id: string) => void;
+  bogoOffers: BogoOffer[];
+  addBogoOffer: (offer: BogoOffer) => void;
+  updateBogoOffer: (offer: BogoOffer) => void;
+  deleteBogoOffer: (id: string) => void;
   offers: Offer[];
   addOffer: (offer: Offer) => void;
   deleteOffer: (id: string) => void;
@@ -333,8 +377,13 @@ export interface StoreContextType {
   clients: Client[];
   addClient: (client: Client) => void;
   updateClient: (client: Client) => void;
+  deleteClient: (id: string) => void;
+  addClientCredit: (clientId: string, amount: number, reason?: string) => void;
+  deductClientCredit: (clientId: string, amount: number, reason?: string) => boolean;
   clientGroups: ClientGroup[];
-  addClientGroup: (group: ClientGroup) => void;
+  addClientGroup: (name: string) => void;
+  updateClientGroup: (id: string, name: string) => void;
+  deleteClientGroup: (id: string) => void;
   selectedClientId: string | null;
   setSelectedClientId: (id: string | null) => void;
   sales: Sale[];
@@ -346,4 +395,6 @@ export interface StoreContextType {
   notification: { message: string, type: 'error' | 'success' } | null;
   clearNotification: () => void;
   notify: (message: string, type?: 'error' | 'success') => void;
+  activePosTerminalId: string | null;
+  setActivePosTerminalId: (id: string | null) => void;
 }

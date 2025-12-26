@@ -234,7 +234,7 @@ export const Configuration: React.FC = () => {
   if (!isAuthenticated && !isRescueMode && users.length > 0) {
     return (
       <div className="h-full flex items-center justify-center bg-slate-950 p-4">
-        <div className="bg-white p-12 rounded-[3rem] shadow-2xl max-w-sm w-full text-center animate-in zoom-in duration-300">
+        <div className="bg-white p-12 rounded-[3rem] shadow-2xl max-sm w-full text-center animate-in zoom-in duration-300">
           <div className="bg-brand-50 w-24 h-24 rounded-3xl flex items-center justify-center mx-auto mb-8 text-brand-600">
             <ShieldCheck size={48} />
           </div>
@@ -462,7 +462,7 @@ export const Configuration: React.FC = () => {
                     <>
                       <p className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] mb-1">Estatus: Desconectado</p>
                       <h4 className="text-xl font-black text-slate-300 tracking-tight mb-2">Sin cuenta vinculada</h4>
-                      <p className="text-[9px] font-bold text-gray-400 uppercase">Vincule su cuenta para respaldos automáticos</p>
+                      <p className="text-[9px] font-bold text-slate-400 uppercase">Vincule su cuenta para respaldos automáticos</p>
                     </>
                   )}
                </div>
@@ -791,14 +791,27 @@ export const Configuration: React.FC = () => {
             <div className="flex gap-4">
               <button onClick={async () => { 
                 if (editingPinUser && newPinValue.length === 4) { 
-                  await updateUserPin(editingPinUser, newPinValue); 
-                  setEditingPinUser(null); 
-                  setNewPinValue(''); 
-                  if (isRescueMode) {
-                    setIsRescueMode(false);
-                    setIsAuthenticated(false); // Forzar re-login con nuevo PIN
-                    localStorage.removeItem('cfg_rescue_mode');
-                    localStorage.setItem('cfg_auth_fail_count', '0');
+                  try {
+                    // Verificamos que la función sea realmente una función antes de llamarla
+                    if (typeof updateUserPin === 'function') {
+                        await updateUserPin(editingPinUser, newPinValue); 
+                        setEditingPinUser(null); 
+                        setNewPinValue(''); 
+                        if (isRescueMode) {
+                          setIsRescueMode(false);
+                          setIsAuthenticated(false); // Forzar re-login con nuevo PIN
+                          localStorage.removeItem('cfg_rescue_mode');
+                          localStorage.setItem('cfg_auth_fail_count', '0');
+                          setFailCount(0);
+                          notify("Identidad restaurada. Por favor, inicie sesión con su nuevo PIN.", "success");
+                        }
+                    } else {
+                        console.error("StoreContext error: updateUserPin is not defined in Provider");
+                        notify("Error interno del sistema al actualizar PIN", "error");
+                    }
+                  } catch (e) {
+                    console.error(e);
+                    notify("Excepción al actualizar PIN", "error");
                   }
                 } 
               }} className="flex-1 bg-slate-900 text-white font-black py-4 rounded-xl uppercase text-xs">Confirmar</button>
