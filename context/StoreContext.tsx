@@ -2,7 +2,7 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { 
   StoreContextType, View, CurrencyConfig, LedgerEntry, User, 
-  BusinessConfig, Coupon, BogoOffer, Offer, Role, Product, Client, ClientGroup, Ticket, Sale, Warehouse, LicenseTier, POSStoreTerminal, Category, PaymentDetail, PurchaseHistoryItem
+  BusinessConfig, Coupon, BogoOffer, Offer, Role, Product, Client, ClientGroup, Ticket, Sale, Warehouse, LicenseTier, POSStoreTerminal, Category, PaymentDetail, PurchaseHistoryItem, Shift
 } from '../types';
 import { MOCK_USERS, DEFAULT_BUSINESS_CONFIG, CATEGORIES as DEFAULT_CATEGORIES } from '../constants';
 import { PermissionEngine } from '../security/PermissionEngine';
@@ -102,7 +102,10 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const [offers, setOffers] = useState<Offer[]>(() => JSON.parse(localStorage.getItem('offers') || '[]'));
   
   const [posCurrency, setPosCurrency] = useState('CUP');
-  const [activeShift, setActiveShift] = useState<any>(null);
+  const [activeShift, setActiveShift] = useState<Shift | null>(() => {
+    const saved = localStorage.getItem('activeShift');
+    return saved ? JSON.parse(saved) : null;
+  });
   const [cart, setCart] = useState<any[]>([]);
   const [notification, setNotification] = useState<{message: string, type: 'error' | 'success'} | null>(null);
   const [selectedClientId, setSelectedClientId] = useState<string | null>(null);
@@ -134,8 +137,9 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     localStorage.setItem('coupons', JSON.stringify(coupons));
     localStorage.setItem('bogoOffers', JSON.stringify(bogoOffers));
     localStorage.setItem('offers', JSON.stringify(offers));
+    localStorage.setItem('activeShift', JSON.stringify(activeShift));
     if (activePosTerminalId) localStorage.setItem('activePosTerminalId', activePosTerminalId);
-  }, [currentUser, users, businessConfig, currencies, warehouses, categories, products, sales, ledger, clients, clientGroups, coupons, bogoOffers, offers, activePosTerminalId]);
+  }, [currentUser, users, businessConfig, currencies, warehouses, categories, products, sales, ledger, clients, clientGroups, coupons, bogoOffers, offers, activeShift, activePosTerminalId]);
 
   const convertCurrency = useCallback((amount: number, from: string, to: string) => {
     const fromRate = currencies.find(c => c.code === from)?.rate || 1;
@@ -192,6 +196,8 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     });
     setProducts(updatedProducts);
 
+    let finalRemainingCredit: number | undefined = undefined;
+
     const newLedgerEntries: LedgerEntry[] = [];
     const txId = generateUniqueId();
     payments.forEach((p: PaymentDetail) => {
@@ -208,6 +214,25 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         description: `Venta ${txId.slice(-6)}`,
         txId
       });
+
+      // Lógica de descuento de crédito
+      if (p.method === 'CREDIT' && selectedClientId) {
+        const rate = currencies.find(c => c.code === p.currency)?.rate || 1;
+        const amountInCUP = p.currency === 'CUP' ? p.amount : p.amount * rate;
+        
+        // Buscamos el saldo actual para calcular el final
+        const currentClient = clients.find(cl => cl.id === selectedClientId);
+        if (currentClient) {
+          finalRemainingCredit = Math.max(0, (currentClient.creditBalance || 0) - amountInCUP);
+        }
+
+        setClients(prev => prev.map(c => c.id === selectedClientId ? { 
+          ...c, 
+          creditBalance: Math.max(0, (c.creditBalance || 0) - amountInCUP),
+          balance: Math.max(0, (c.creditBalance || 0) - amountInCUP),
+          updatedAt: new Date().toISOString() 
+        } : c));
+      }
     });
 
     if (changeInCUP > 0) {
@@ -238,6 +263,8 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       note,
       appliedCouponId,
       clientId: selectedClientId || undefined,
+      sellerName: currentUser?.name || 'Sistema',
+      clientRemainingCredit: finalRemainingCredit,
       timestamp: new Date().toISOString()
     };
 
@@ -259,7 +286,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     notify("Venta procesada con éxito", "success");
     setSelectedClientId(null);
     return finalTicket;
-  }, [products, businessConfig, activePosTerminalId, activeShift, currentUser, convertCurrency, notify, selectedClientId]);
+  }, [products, businessConfig, activePosTerminalId, activeShift, currentUser, convertCurrency, notify, selectedClientId, currencies, clients]);
 
   const login = async (pin: string): Promise<boolean> => {
     const hashed = await hashPin(pin);
@@ -267,6 +294,11 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     if (u) { setCurrentUser(u); return true; }
     notify("PIN Incorrecto", "error");
     return false;
+  };
+
+  const validatePin = async (pin: string): Promise<User | null> => {
+    const hashed = await hashPin(pin);
+    return users.find(u => u.pin === hashed) || null;
   };
 
   const updateUserPin = useCallback(async (userId: string, newPin: string) => {
@@ -387,6 +419,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       updateUserPin,
       deleteUser: (id) => setUsers(prev => prev.filter(u => u.id !== id)),
       login,
+      validatePin,
       logout: () => { setCurrentUser(null); setView(View.POS); },
       checkModuleAccess: (mid) => PermissionEngine.validateModuleAccess(mid as View, getCurrentTier(), businessConfig.security),
       isLicenseValid: businessConfig.licenseStatus === 'ACTIVE',
@@ -419,8 +452,8 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       },
       processSale,
       posCurrency, setPosCurrency, activeShift, 
-      openShift: (cash: any) => setActiveShift({ id: generateUniqueId(), openedAt: new Date().toISOString(), openedBy: currentUser?.name, startCash: cash }),
-      closeShift: () => setActiveShift(null),
+      openShift: (cash: Record<string, number>) => setActiveShift({ id: generateUniqueId(), openedAt: new Date().toISOString(), openedBy: currentUser?.name || 'Sistema', startCash: cash }),
+      closeShift: (cash: Record<string, number>, closedBy: string) => setActiveShift(prev => prev ? { ...prev, closedAt: new Date().toISOString(), actualCash: cash, closedBy } : null),
       addCurrency: (c) => setCurrencies(prev => [...prev, c]),
       updateCurrency: (c) => setCurrencies(prev => prev.map(curr => curr.code === c.code ? c : curr)),
       deleteCurrency: (code) => setCurrencies(prev => prev.filter(c => c.code !== code)),

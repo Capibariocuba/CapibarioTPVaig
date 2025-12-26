@@ -1,17 +1,18 @@
-
 import React, { useState, useEffect, useMemo } from 'react';
 import { useStore } from '../context/StoreContext';
 import { 
     Search, Plus, Minus, Trash2, Receipt, User as UserIcon, Tag, Ticket as TicketIcon, 
-    Lock, Layers, X, AlertTriangle, Monitor, ChevronRight, CheckCircle, Percent, Wallet, DollarSign, Calendar, Zap
+    Lock, Layers, X, AlertTriangle, Monitor, ChevronRight, CheckCircle, Percent, Wallet, DollarSign, Calendar, Zap, Package, LogOut, Printer, FileDown
 } from 'lucide-react';
 import { PaymentModal } from '../components/PaymentModal';
-import { Currency, Ticket, Product, PaymentDetail, Coupon, ProductVariant, Client } from '../types';
+import { Currency, Ticket, Product, PaymentDetail, Coupon, ProductVariant, Client, View } from '../types';
+import { ShiftManager } from './ShiftManager';
+import { jsPDF } from 'jspdf';
 
 export const POS: React.FC = () => {
   const { 
     products, addToCart: storeAddToCart, cart, removeFromCart, updateQuantity, processSale, 
-    rates, activeShift, openShift, clearCart, warehouses, categories,
+    rates, activeShift, openShift, clearCart, warehouses, categories, setView,
     clients, selectedClientId, setSelectedClientId,
     posCurrency, setPosCurrency, currentUser, login, coupons, isItemLocked,
     businessConfig, activePosTerminalId, setActivePosTerminalId, notify, currencies
@@ -84,9 +85,232 @@ export const POS: React.FC = () => {
 
   const cartTotal = useMemo(() => Math.max(0, cartSubtotal - discountAmount), [cartSubtotal, discountAmount]);
 
+  // --- ACCIONES DE TICKET (PDF / PRINT) ---
+  const getTicketHTML = (ticket: Ticket) => {
+    const symbol = currencies.find(c => c.code === ticket.currency)?.symbol || '$';
+    const dateStr = new Date(ticket.timestamp).toLocaleString();
+    const client = clients.find(c => c.id === ticket.clientId);
+    
+    const totalPaid = ticket.payments.reduce((acc, p) => acc + p.amount, 0);
+    const overpay = totalPaid - ticket.total;
+    const changeCUP = overpay > 0.01 ? (overpay * (rates[ticket.currency] || 1)) : 0;
+
+    return `
+      <div style="font-family: 'Courier New', Courier, monospace; color: black; background: white; padding: 2mm; line-height: 1.2;">
+        <div style="text-align: center; margin-bottom: 5mm; border-bottom: 0.5pt dashed #000; padding-bottom: 3mm;">
+          <h2 style="margin: 0; font-size: 14pt; text-transform: uppercase; font-weight: bold;">${businessConfig.name}</h2>
+          <p style="font-size: 8pt; margin: 1mm 0;">${businessConfig.address}</p>
+          <p style="font-size: 8pt; margin: 1mm 0;">NIT: ${businessConfig.taxId || 'N/A'}</p>
+          <p style="font-size: 8pt; margin: 1mm 0;">Tel: ${businessConfig.phone || 'N/A'}</p>
+        </div>
+
+        <div style="font-size: 8pt; margin-bottom: 5mm; border-bottom: 0.5pt dashed #000; padding-bottom: 3mm;">
+          <div style="display: flex; justify-content: space-between;"><span>No. TICKET:</span><span>#${ticket.id.slice(-6)}</span></div>
+          <div style="display: flex; justify-content: space-between;"><span>FECHA:</span><span>${dateStr}</span></div>
+          <div style="display: flex; justify-content: space-between;"><span>AGENTE:</span><span>${(ticket.sellerName || 'SISTEMA').toUpperCase()}</span></div>
+          ${client ? `<div style="display: flex; justify-content: space-between;"><span>CLIENTE:</span><span>${client.name.toUpperCase()}</span></div>` : ''}
+          <div style="display: flex; justify-content: space-between;"><span>TERMINAL:</span><span>${activeTerminal?.name || '001'}</span></div>
+        </div>
+
+        <table style="width: 100%; font-size: 8pt; border-collapse: collapse; margin-bottom: 5mm;">
+          <thead style="border-bottom: 1pt solid #000;">
+            <tr>
+              <th style="text-align: left; padding-bottom: 1mm;">DETALLE</th>
+              <th style="text-align: center; padding-bottom: 1mm;">CT</th>
+              <th style="text-align: right; padding-bottom: 1mm;">TOTAL</th>
+            </tr>
+          </thead>
+          <tbody style="padding-top: 1mm;">
+            ${ticket.items.map(i => `
+              <tr>
+                <td style="padding: 1.5mm 0; line-height: 1;">
+                  <span style="font-weight: bold; display: block;">${i.name.toUpperCase()}</span>
+                  ${i.sku ? `<span style="font-size: 7pt; color: #333;">${i.sku}</span>` : ''}
+                </td>
+                <td style="text-align: center; padding: 1.5mm 0;">${i.quantity}</td>
+                <td style="text-align: right; padding: 1.5mm 0; font-weight: bold;">${symbol}${((i.quantity) * convertValue(getEffectiveUnitPrice(i))).toFixed(2)}</td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+
+        <div style="font-size: 9pt; border-top: 0.5pt solid #000; padding-top: 3mm; margin-bottom: 5mm;">
+          <div style="display: flex; justify-content: space-between;"><span>SUBTOTAL:</span><span>${symbol}${ticket.subtotal.toFixed(2)}</span></div>
+          ${ticket.discount > 0 ? `<div style="display: flex; justify-content: space-between; color: #444;"><span>DESCUENTO:</span><span>-${symbol}${ticket.discount.toFixed(2)}</span></div>` : ''}
+          <div style="display: flex; justify-content: space-between; font-weight: bold; font-size: 11pt; margin-top: 2mm; border-top: 0.5pt solid #000; padding-top: 2mm;">
+            <span>TOTAL (${ticket.currency}):</span>
+            <span>${symbol}${ticket.total.toFixed(2)}</span>
+          </div>
+        </div>
+
+        <div style="font-size: 8pt; margin-bottom: 5mm; background: #f9f9f9; padding: 2mm; border-radius: 2mm;">
+          <p style="margin: 0 0 1mm 0; font-weight: bold; border-bottom: 0.2pt solid #ccc; padding-bottom: 1mm;">DESGLOSE DE PAGO:</p>
+          ${ticket.payments.map(p => `
+            <div style="display: flex; justify-content: space-between; margin-bottom: 0.5mm;">
+              <span>${p.method === 'CREDIT' ? 'CRÉDITO CLIENTE' : p.method.toUpperCase()}:</span>
+              <span>${currencies.find(c => c.code === p.currency)?.symbol || '$'}${p.amount.toFixed(2)}</span>
+            </div>
+          `).join('')}
+          
+          ${changeCUP > 0.009 ? `
+            <div style="display: flex; justify-content: space-between; margin-top: 2mm; font-weight: bold; color: #000; border-top: 0.2pt dashed #000; padding-top: 1.5mm;">
+              <span>CAMBIO ENTREGADO:</span>
+              <span>₱${changeCUP.toFixed(2)} CUP</span>
+            </div>
+          ` : ''}
+
+          ${ticket.clientRemainingCredit !== undefined ? `
+            <div style="display: flex; justify-content: space-between; margin-top: 2mm; font-style: italic; color: #555;">
+              <span>SALDO RESTANTE:</span>
+              <span>$${ticket.clientRemainingCredit.toFixed(2)} CUP</span>
+            </div>
+          ` : ''}
+        </div>
+
+        <div style="text-align: center; margin-top: 8mm; font-size: 8pt; border-top: 0.5pt dashed #000; padding-top: 4mm;">
+          <p style="margin: 0; font-weight: bold;">${businessConfig.footerMessage || '¡GRACIAS POR SU PREFERENCIA!'}</p>
+          <p style="margin: 3mm 0 0 0; opacity: 0.4; font-size: 6pt;">POWERED BY CAPIBARIO TPV</p>
+        </div>
+      </div>
+    `;
+  };
+
+  const handlePrintTicket = (ticket: Ticket) => {
+    const printArea = document.getElementById('pos-ticket-print');
+    if (printArea) {
+      printArea.innerHTML = getTicketHTML(ticket);
+      window.print();
+    }
+  };
+
+  const handleDownloadPDF = (ticket: Ticket) => {
+    const doc = new jsPDF({
+      unit: 'mm',
+      format: [80, 200]
+    });
+
+    const symbol = currencies.find(c => c.code === ticket.currency)?.symbol || '$';
+    const dateStr = new Date(ticket.timestamp).toLocaleString();
+    const totalPaid = ticket.payments.reduce((acc, p) => acc + p.amount, 0);
+    const overpay = totalPaid - ticket.total;
+    const changeCUP = overpay > 0.01 ? (overpay * (rates[ticket.currency] || 1)) : 0;
+    
+    let y = 12;
+    const margin = 7;
+    const width = 80;
+    const innerWidth = width - (margin * 2);
+
+    // Encabezado
+    doc.setFont('courier', 'bold');
+    doc.setFontSize(11);
+    doc.text(businessConfig.name.toUpperCase(), 40, y, { align: 'center' }); y += 5;
+    
+    doc.setFontSize(7);
+    doc.setFont('courier', 'normal');
+    const splitAddress = doc.splitTextToSize(businessConfig.address, innerWidth);
+    doc.text(splitAddress, 40, y, { align: 'center' }); y += (splitAddress.length * 3.5);
+    
+    doc.text(`NIT: ${businessConfig.taxId || 'N/A'}`, 40, y, { align: 'center' }); y += 4;
+    doc.text(`TEL: ${businessConfig.phone || 'N/A'}`, 40, y, { align: 'center' }); y += 6;
+
+    // Fix: Using 'any' cast because setLineDash is sometimes missing from jsPDF type definitions
+    (doc as any).setLineDash([1, 1]);
+    doc.line(margin, y, width - margin, y); y += 6;
+    // Fix: Using 'any' cast to reset line dash pattern
+    (doc as any).setLineDash([]);
+
+    // Meta info
+    doc.setFont('courier', 'bold');
+    doc.text(`TICKET:`, margin, y); doc.text(`#${ticket.id.slice(-6)}`, width - margin, y, { align: 'right' }); y += 3.5;
+    doc.setFont('courier', 'normal');
+    doc.text(`FECHA:`, margin, y); doc.text(dateStr, width - margin, y, { align: 'right' }); y += 3.5;
+    doc.text(`AGENTE:`, margin, y); doc.text((ticket.sellerName || 'SISTEMA').toUpperCase(), width - margin, y, { align: 'right' }); y += 3.5;
+    if (ticket.clientId) {
+      const client = clients.find(c => c.id === ticket.clientId);
+      doc.text(`CLIENTE:`, margin, y); doc.text((client?.name || 'GENÉRICO').toUpperCase(), width - margin, y, { align: 'right' }); y += 3.5;
+    }
+    y += 4;
+
+    // Tabla de ítems
+    doc.setFont('courier', 'bold');
+    doc.line(margin, y, width - margin, y); y += 4;
+    doc.text('DETALLE', margin, y); doc.text('CT', 50, y); doc.text('TOTAL', width - margin, y, { align: 'right' }); y += 3;
+    doc.line(margin, y, width - margin, y); y += 5;
+    
+    doc.setFont('courier', 'normal');
+    ticket.items.forEach(item => {
+      const linePrice = convertValue(getEffectiveUnitPrice(item));
+      const lineTotal = (item.quantity * linePrice).toFixed(2);
+      
+      const itemName = item.name.toUpperCase();
+      const splitName = doc.splitTextToSize(itemName, 35);
+      
+      doc.text(splitName, margin, y);
+      doc.text(String(item.quantity), 50, y);
+      doc.text(`${symbol}${lineTotal}`, width - margin, y, { align: 'right' });
+      
+      y += (splitName.length * 3.5) + 1;
+    });
+
+    y += 2;
+    doc.line(margin, y, width - margin, y); y += 5;
+    
+    // Totales
+    doc.text(`SUBTOTAL:`, margin, y); doc.text(`${symbol}${ticket.subtotal.toFixed(2)}`, width - margin, y, { align: 'right' }); y += 4;
+    if(ticket.discount > 0) {
+      doc.text(`DESCUENTO:`, margin, y); doc.text(`-${symbol}${ticket.discount.toFixed(2)}`, width - margin, y, { align: 'right' }); y += 4;
+    }
+    
+    doc.setFontSize(10);
+    doc.setFont('courier', 'bold');
+    doc.text(`TOTAL (${ticket.currency}):`, margin, y); doc.text(`${symbol}${ticket.total.toFixed(2)}`, width - margin, y, { align: 'right' }); y += 8;
+
+    // Pagos y Cambio
+    doc.setFontSize(7);
+    doc.setFont('courier', 'bold');
+    doc.text(`DESGLOSE DE PAGO:`, margin, y); y += 4;
+    doc.setFont('courier', 'normal');
+    ticket.payments.forEach(p => {
+      const pSymbol = currencies.find(c => c.code === p.currency)?.symbol || '$';
+      doc.text(`- ${p.method === 'CREDIT' ? 'CRÉDITO CLIENTE' : p.method.toUpperCase()}:`, margin + 2, y);
+      doc.text(`${pSymbol}${p.amount.toFixed(2)}`, width - margin, y, { align: 'right' });
+      y += 3.5;
+    });
+
+    if (changeCUP > 0.009) {
+      y += 2;
+      doc.setFont('courier', 'bold');
+      doc.text(`CAMBIO ENTREGADO:`, margin, y); 
+      doc.text(`₱${changeCUP.toFixed(2)} CUP`, width - margin, y, { align: 'right' }); 
+      y += 4;
+    }
+
+    if (ticket.clientRemainingCredit !== undefined) {
+      y += 1;
+      doc.setFont('courier', 'italic');
+      doc.text(`SALDO RESTANTE:`, margin, y); 
+      doc.text(`$${ticket.clientRemainingCredit.toFixed(2)} CUP`, width - margin, y, { align: 'right' }); 
+      y += 4;
+    }
+
+    // Footer
+    y += 10;
+    doc.setFont('courier', 'bold');
+    doc.setFontSize(8);
+    const splitFooter = doc.splitTextToSize(businessConfig.footerMessage || '¡GRACIAS POR SU COMPRA!', innerWidth);
+    doc.text(splitFooter, 40, y, { align: 'center' });
+    y += (splitFooter.length * 4);
+
+    doc.setFontSize(6);
+    doc.setFont('courier', 'normal');
+    doc.text('POWERED BY CAPIBARIO TPV', 40, y + 5, { align: 'center' });
+
+    doc.save(`Ticket_${ticket.id.slice(-6)}.pdf`);
+  };
+
   // --- ACCIONES ---
-  const handleAddToCart = (p: Product, vId?: string) => {
-    if (p.variants?.length > 0 && !vId) {
+  const handleAddToCart = (p: Product, vId?: string, isBase: boolean = false) => {
+    if (p.variants?.length > 0 && !vId && !isBase) {
         setSelectedProductForVariants(p);
         return;
     }
@@ -153,16 +377,7 @@ export const POS: React.FC = () => {
       </div>
   );
 
-  if (!activeShift) return (
-    <div className="h-screen flex flex-col items-center justify-center bg-gray-50 p-4 text-center">
-        <div className="bg-white p-12 rounded-[4rem] shadow-2xl max-w-lg w-full border border-gray-100">
-            <div className="bg-brand-50 w-24 h-24 rounded-[2.5rem] flex items-center justify-center mx-auto mb-8 text-brand-600 shadow-inner"><Monitor size={48} /></div>
-            <h1 className="text-3xl font-black text-slate-800 mb-2 tracking-tighter uppercase">Caja Cerrada</h1>
-            <p className="text-slate-400 font-bold mb-12 text-sm uppercase tracking-widest leading-relaxed">El sistema requiere la apertura de un turno fiscal para operar el TPV.</p>
-            <button onClick={() => openShift({ CUP: 0, USD: 0, EUR: 0 })} className="w-full bg-slate-900 text-white font-black py-7 rounded-[2rem] hover:bg-brand-600 shadow-2xl transition-all uppercase tracking-[0.3em] text-xs">Apertura Maestra</button>
-        </div>
-    </div>
-  );
+  if (!activeShift) return <div className="h-full"><ShiftManager /></div>;
 
   return (
     <div className="flex h-screen bg-gray-100 overflow-hidden relative font-sans animate-in fade-in duration-500">
@@ -191,6 +406,14 @@ export const POS: React.FC = () => {
                         </button>
                     ))}
                 </div>
+                {/* BOTÓN CIERRE RÁPIDO */}
+                <button 
+                  onClick={() => setView(View.CONFIGURATION)} // O una vista específica de turnos si se decide separar
+                  title="Cierre de Turno"
+                  className="hidden md:flex p-3.5 bg-slate-900 text-white rounded-2xl hover:bg-red-600 transition-all shadow-lg"
+                >
+                  <LogOut size={18}/>
+                </button>
             </div>
 
             {/* Categorías (Visible y con scroll) */}
@@ -211,7 +434,7 @@ export const POS: React.FC = () => {
                 <div className="grid grid-cols-4 md:grid-cols-4 lg:grid-cols-7 gap-1.5 md:gap-3">
                     {filteredProducts.map(p => {
                         const effectivePrice = convertValue(p.price);
-                        const stock = p.stock || 0;
+                        const stock = (p.variants?.length ? p.variants.reduce((acc, v) => acc + (v.stock || 0), 0) : p.stock) || 0;
                         return (
                             <button 
                                 key={p.id}
@@ -355,7 +578,10 @@ export const POS: React.FC = () => {
                         <h4 className="text-xl font-black tracking-tighter">{currencies.find(c => c.code === posCurrency)?.symbol}{cartTotal.toFixed(2)}</h4>
                     </div>
                 </div>
-                <button onClick={() => setIsTicketOpen(true)} className="bg-white text-slate-900 px-6 py-3 rounded-xl font-black text-[10px] uppercase tracking-widest flex items-center gap-2">Abrir <ChevronRight size={14}/></button>
+                <div className="flex gap-2">
+                   <button onClick={() => setView(View.CONFIGURATION)} className="bg-slate-800 text-white p-3 rounded-xl"><LogOut size={16}/></button>
+                   <button onClick={() => setIsTicketOpen(true)} className="bg-white text-slate-900 px-6 py-3 rounded-xl font-black text-[10px] uppercase tracking-widest flex items-center gap-2">Abrir <ChevronRight size={14}/></button>
+                </div>
             </div>
         )}
 
@@ -371,6 +597,18 @@ export const POS: React.FC = () => {
                         <button onClick={() => setSelectedProductForVariants(null)} className="p-3 bg-white/10 rounded-2xl"><X size={20}/></button>
                     </div>
                     <div className="p-8 grid grid-cols-1 gap-3 max-h-[60vh] overflow-y-auto">
+                        {/* Opción Producto Base */}
+                        <button 
+                            onClick={() => handleAddToCart(selectedProductForVariants, undefined, true)}
+                            className="flex items-center justify-between p-5 bg-brand-50 border-2 border-brand-200 rounded-2xl hover:bg-brand-100 transition-all group"
+                        >
+                            <div className="flex items-center gap-4">
+                                <div className="w-10 h-10 rounded-xl bg-brand-500 flex items-center justify-center text-white"><Package size={20}/></div>
+                                <span className="font-black text-brand-700 uppercase text-xs">Producto Base (Original)</span>
+                            </div>
+                            <span className="font-black text-brand-600">{currencies.find(c => c.code === posCurrency)?.symbol}{convertValue(selectedProductForVariants.price).toFixed(2)}</span>
+                        </button>
+
                         {selectedProductForVariants.variants.map(v => (
                             <button 
                                 key={v.id} 
@@ -395,7 +633,7 @@ export const POS: React.FC = () => {
                 <div className="bg-white rounded-[3rem] w-full max-w-xl shadow-2xl overflow-hidden animate-in zoom-in h-[70vh] flex flex-col">
                     <div className="p-8 bg-slate-900 text-white flex justify-between items-center shrink-0">
                         <h3 className="text-xl font-black uppercase tracking-tighter">Vincular Cliente</h3>
-                        <button onClick={() => setIsClientModalOpen(false)} className="p-3 bg-white/10 rounded-2xl"><X size={20}/></button>
+                        <button onClick={() => { setIsClientModalOpen(false); }} className="p-3 bg-white/10 rounded-2xl"><X size={20}/></button>
                     </div>
                     <div className="p-6 bg-gray-50 border-b border-gray-100 shrink-0">
                         <div className="relative">
@@ -430,6 +668,7 @@ export const POS: React.FC = () => {
             <PaymentModal 
                 total={cartTotal} 
                 currencyCode={posCurrency} 
+                clientId={selectedClientId}
                 onClose={() => setShowPaymentModal(false)} 
                 onConfirm={handleConfirmSale} 
             />
@@ -440,7 +679,23 @@ export const POS: React.FC = () => {
                 <div className="bg-white p-10 rounded-[4rem] w-full max-w-sm text-center shadow-2xl animate-in zoom-in">
                     <div className="bg-emerald-50 text-emerald-600 p-8 rounded-full w-24 h-24 flex items-center justify-center mx-auto mb-8 shadow-inner"><Receipt size={48}/></div>
                     <h3 className="text-3xl font-black uppercase tracking-tighter mb-2">Venta Exitosa</h3>
-                    <p className="text-[10px] text-slate-400 font-black uppercase tracking-widest mb-10">Comprobante ID: {currentTicket.id.slice(-6)}</p>
+                    <p className="text-[10px] text-slate-400 font-black uppercase tracking-widest mb-6">Comprobante ID: {currentTicket.id.slice(-6)}</p>
+                    
+                    <div className="flex gap-2 mb-6">
+                        <button 
+                            onClick={() => handlePrintTicket(currentTicket)}
+                            className="flex-1 bg-gray-100 text-slate-700 py-4 rounded-2xl font-black uppercase text-[10px] tracking-widest flex items-center justify-center gap-2 hover:bg-gray-200 transition-all"
+                        >
+                            <Printer size={16}/> Imprimir
+                        </button>
+                        <button 
+                            onClick={() => handleDownloadPDF(currentTicket)}
+                            className="flex-1 bg-gray-100 text-slate-700 py-4 rounded-2xl font-black uppercase text-[10px] tracking-widest flex items-center justify-center gap-2 hover:bg-gray-200 transition-all"
+                        >
+                            <FileDown size={16}/> PDF
+                        </button>
+                    </div>
+
                     <button onClick={() => setShowTicketModal(false)} className="w-full bg-slate-900 text-white font-black py-6 rounded-[2rem] uppercase tracking-[0.2em] text-xs shadow-xl">Finalizar</button>
                 </div>
             </div>

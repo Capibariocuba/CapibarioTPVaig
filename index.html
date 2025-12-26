@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="es">
   <head>
@@ -45,6 +46,26 @@
       ::-webkit-scrollbar-thumb:hover {
         background: #94a3b8; 
       }
+
+      /* Print Styles for POS Tickets */
+      @media print {
+        body * { visibility: hidden; }
+        #pos-ticket-print, #pos-ticket-print * { visibility: visible; }
+        #pos-ticket-print { 
+          position: absolute; 
+          left: 0; 
+          top: 0; 
+          width: 80mm; 
+          padding: 5mm;
+          font-family: 'Courier New', Courier, monospace;
+          color: black !important;
+          background: white !important;
+        }
+        @page {
+          size: 80mm auto;
+          margin: 0;
+        }
+      }
     </style>
   <script type="importmap">
 {
@@ -53,13 +74,16 @@
     "recharts": "https://esm.sh/recharts@^3.6.0",
     "react/": "https://esm.sh/react@^19.2.3/",
     "react": "https://esm.sh/react@^19.2.3",
-    "react-dom/": "https://esm.sh/react-dom@^19.2.3/"
+    "react-dom/": "https://esm.sh/react-dom@^19.2.3/",
+    "jspdf": "https://esm.sh/jspdf@2.5.1"
   }
 }
 </script>
 </head>
   <body class="bg-gray-50 text-slate-900 font-sans antialiased overflow-hidden">
     <div id="root"></div>
+    <!-- Hidden container for printing tickets -->
+    <div id="pos-ticket-print" class="hidden"></div>
     <script>
       if ('serviceWorker' in navigator) {
         window.addEventListener('load', () => {

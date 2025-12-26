@@ -7,20 +7,35 @@ import { useStore } from '../context/StoreContext';
 interface PaymentModalProps {
   total: number;
   currencyCode: string;
+  clientId: string | null;
   onClose: () => void;
   onConfirm: (payments: any[]) => void;
 }
 
-export const PaymentModal: React.FC<PaymentModalProps> = ({ total, currencyCode, onClose, onConfirm }) => {
-  const { currencies, businessConfig, rates } = useStore();
+export const PaymentModal: React.FC<PaymentModalProps> = ({ total, currencyCode, clientId, onClose, onConfirm }) => {
+  const { currencies, businessConfig, rates, clients, notify } = useStore();
   const [payments, setPayments] = useState<any[]>([]);
   const [amount, setAmount] = useState(total.toString());
   const [method, setMethod] = useState<PaymentMethodType>('CASH');
 
   const selectedCurrency = currencies.find(c => c.code === currencyCode);
+  const client = clients.find(c => c.id === clientId);
+  const clientBalanceCUP = client?.creditBalance || 0;
+  const clientBalanceInCurrent = currencyCode === 'CUP' ? clientBalanceCUP : clientBalanceCUP / (rates[currencyCode] || 1);
 
-  const allowedMethods = businessConfig.paymentMethods
-    .filter(m => m.enabled && selectedCurrency?.allowedPaymentMethods.includes(m.id));
+  const allowedMethods = useMemo(() => {
+    const base = businessConfig.paymentMethods
+      .filter(m => m.enabled && selectedCurrency?.allowedPaymentMethods.includes(m.id))
+      .map(m => ({ ...m }));
+    
+    // Añadir Crédito si el cliente tiene saldo
+    if (clientId && clientBalanceCUP > 0) {
+      if (!base.find(m => m.id === 'CREDIT')) {
+        base.push({ id: 'CREDIT', label: 'Crédito', enabled: true, showInTicket: true });
+      }
+    }
+    return base;
+  }, [businessConfig.paymentMethods, selectedCurrency, clientId, clientBalanceCUP]);
 
   const totalPaid = payments.reduce((acc, p) => acc + p.amount, 0);
   const remaining = Math.max(0, total - totalPaid);
@@ -42,6 +57,15 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ total, currencyCode,
   const addPayment = () => {
     const val = parseFloat(amount);
     if (!val || val <= 0) return;
+
+    if (method === 'CREDIT') {
+      const alreadyUsedCredit = payments.filter(p => p.method === 'CREDIT').reduce((acc, p) => acc + p.amount, 0);
+      if (val + alreadyUsedCredit > clientBalanceInCurrent + 0.001) {
+        notify("Saldo insuficiente en línea de crédito", "error");
+        return;
+      }
+    }
+
     setPayments([...payments, { method, amount: val, currency: currencyCode }]);
     setAmount('');
   };
@@ -67,6 +91,11 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ total, currencyCode,
                 <div className="text-3xl md:text-4xl font-black text-slate-900 tracking-tighter">
                     {selectedCurrency?.symbol}{total.toFixed(2)}
                 </div>
+                {clientId && (
+                  <p className="mt-2 text-[10px] font-black uppercase text-brand-500 tracking-widest">
+                    Saldo Crédito: {selectedCurrency?.symbol}{clientBalanceInCurrent.toFixed(2)}
+                  </p>
+                )}
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6 md:gap-8">
@@ -99,7 +128,7 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ total, currencyCode,
                             <div key={i} className="bg-white p-3 md:p-4 rounded-xl md:rounded-2xl border border-slate-100 flex justify-between items-center animate-in slide-in-from-right">
                                 <div>
                                     <div className="font-black text-sm md:text-base text-slate-800">{selectedCurrency?.symbol}{p.amount.toFixed(2)}</div>
-                                    <div className="text-[8px] md:text-[9px] text-brand-500 font-black uppercase">{p.method}</div>
+                                    <div className="text-[8px] md:text-[9px] text-brand-500 font-black uppercase">{p.method === 'CREDIT' ? 'Crédito' : p.method}</div>
                                 </div>
                                 <button onClick={() => setPayments(payments.filter((_, idx) => idx !== i))} className="text-red-300 hover:text-red-500"><Trash2 size={16}/></button>
                             </div>

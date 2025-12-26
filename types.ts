@@ -310,6 +310,8 @@ export interface Ticket {
   note?: string;
   appliedCouponId?: string;
   clientId?: string;
+  sellerName?: string;
+  clientRemainingCredit?: number;
   timestamp: string;
 }
 
@@ -318,11 +320,22 @@ export interface Sale extends Ticket {
   date: string;
 }
 
+export interface Shift {
+  id: string;
+  openedAt: string;
+  openedBy: string;
+  startCash: Record<string, number>;
+  closedAt?: string;
+  closedBy?: string;
+  actualCash?: Record<string, number>; // Monto contado físicamente al cierre
+}
+
 export interface StoreContextType {
   view: View;
   setView: (view: View) => void;
   currentUser: User | null;
   login: (pin: string) => Promise<boolean>;
+  validatePin: (pin: string) => Promise<User | null>;
   logout: () => void;
   users: User[];
   addUser: (user: User) => Promise<void>;
@@ -368,9 +381,9 @@ export interface StoreContextType {
   rates: Record<string, number>;
   posCurrency: string;
   setPosCurrency: (code: string) => void;
-  activeShift: any;
-  openShift: (cash: any) => void;
-  closeShift: (cash: any) => void;
+  activeShift: Shift | null;
+  openShift: (cash: Record<string, number>) => void;
+  closeShift: (cash: Record<string, number>, closedBy: string) => void;
   getCurrentCash: () => Record<string, number>;
   getLedgerBalance: (currency: string, method: string) => number;
   updateRate: (code: string, rate: number, tax?: number) => void;
