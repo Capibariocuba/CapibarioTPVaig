@@ -18,6 +18,9 @@ export const POS: React.FC = () => {
     businessConfig, activePosTerminalId, setActivePosTerminalId, notify, currencies
   } = useStore();
   
+  // --- UTILIDADES DE PRECISIÓN ---
+  const round2 = (num: number) => Math.round((num + Number.EPSILON) * 100) / 100;
+
   // --- ESTADOS LOCALES ---
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('Todo');
@@ -75,16 +78,19 @@ export const POS: React.FC = () => {
   };
 
   const cartSubtotal = useMemo(() => {
-    return cart.reduce((acc, item) => acc + (convertValue(getEffectiveUnitPrice(item)) * item.quantity), 0);
+    const sum = cart.reduce((acc, item) => acc + (convertValue(getEffectiveUnitPrice(item)) * item.quantity), 0);
+    return round2(sum);
   }, [cart, posCurrency, rates]);
 
   const discountAmount = useMemo(() => {
     if (!appliedCoupon) return 0;
-    if (appliedCoupon.type === 'PERCENTAGE') return cartSubtotal * (appliedCoupon.value / 100);
-    return convertValue(appliedCoupon.value);
+    let disc = 0;
+    if (appliedCoupon.type === 'PERCENTAGE') disc = cartSubtotal * (appliedCoupon.value / 100);
+    else disc = convertValue(appliedCoupon.value);
+    return round2(disc);
   }, [appliedCoupon, cartSubtotal, posCurrency, rates]);
 
-  const cartTotal = useMemo(() => Math.max(0, cartSubtotal - discountAmount), [cartSubtotal, discountAmount]);
+  const cartTotal = useMemo(() => round2(Math.max(0, cartSubtotal - discountAmount)), [cartSubtotal, discountAmount]);
 
   // --- ACCIONES DE TICKET (PDF / PRINT) ---
   const getTicketHTML = (ticket: Ticket) => {
@@ -94,7 +100,8 @@ export const POS: React.FC = () => {
     
     const totalPaid = ticket.payments.reduce((acc, p) => acc + p.amount, 0);
     const overpay = totalPaid - ticket.total;
-    const changeCUP = overpay > 0.01 ? (overpay * (rates[ticket.currency] || 1)) : 0;
+    // Cambio exacto estabilizado a 2 decimales
+    const changeCUP = overpay > 0.0001 ? round2(overpay * (rates[ticket.currency] || 1)) : 0;
 
     return `
       <div style="font-family: 'Courier New', Courier, monospace; color: black; background: white; padding: 5mm; line-height: 1.3; box-sizing: border-box;">
@@ -202,7 +209,7 @@ export const POS: React.FC = () => {
     const dateStr = new Date(ticket.timestamp).toLocaleString();
     const totalPaid = ticket.payments.reduce((acc, p) => acc + p.amount, 0);
     const overpay = totalPaid - ticket.total;
-    const changeCUP = overpay > 0.01 ? (overpay * (rates[ticket.currency] || 1)) : 0;
+    const changeCUP = overpay > 0.0001 ? round2(overpay * (rates[ticket.currency] || 1)) : 0;
     
     let y = 15;
     const margin = 10;
