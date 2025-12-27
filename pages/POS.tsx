@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { useStore } from '../context/StoreContext';
 import { 
     Search, Plus, Minus, Trash2, Receipt, User as UserIcon, Tag, Ticket as TicketIcon, 
-    Lock, Layers, X, AlertTriangle, Monitor, ChevronRight, CheckCircle, Percent, Wallet, DollarSign, Calendar, Zap, Package, LogOut, Printer, FileDown
+    Lock, Unlock, Layers, X, AlertTriangle, Monitor, ChevronRight, CheckCircle, Percent, Wallet, DollarSign, Calendar, Zap, Package, LogOut, Printer, FileDown
 } from 'lucide-react';
 import { PaymentModal } from '../components/PaymentModal';
 import { Currency, Ticket, Product, PaymentDetail, Coupon, ProductVariant, Client, View } from '../types';
@@ -25,6 +25,7 @@ export const POS: React.FC = () => {
   const [showPaymentModal, setShowPaymentModal] = useState(false);
   const [showTicketModal, setShowTicketModal] = useState(false);
   const [currentTicket, setCurrentTicket] = useState<Ticket | null>(null);
+  const [showShiftManager, setShowShiftManager] = useState(false);
   
   const [selectedProductForVariants, setSelectedProductForVariants] = useState<Product | null>(null);
   const [couponCodeInput, setCouponCodeInput] = useState('');
@@ -96,15 +97,15 @@ export const POS: React.FC = () => {
     const changeCUP = overpay > 0.01 ? (overpay * (rates[ticket.currency] || 1)) : 0;
 
     return `
-      <div style="font-family: 'Courier New', Courier, monospace; color: black; background: white; padding: 2mm; line-height: 1.2;">
-        <div style="text-align: center; margin-bottom: 5mm; border-bottom: 0.5pt dashed #000; padding-bottom: 3mm;">
+      <div style="font-family: 'Courier New', Courier, monospace; color: black; background: white; padding: 5mm; line-height: 1.3; box-sizing: border-box;">
+        <div style="text-align: center; margin-bottom: 6mm; border-bottom: 0.5pt dashed #000; padding-bottom: 4mm;">
           <h2 style="margin: 0; font-size: 14pt; text-transform: uppercase; font-weight: bold;">${businessConfig.name}</h2>
           <p style="font-size: 8pt; margin: 1mm 0;">${businessConfig.address}</p>
           <p style="font-size: 8pt; margin: 1mm 0;">NIT: ${businessConfig.taxId || 'N/A'}</p>
           <p style="font-size: 8pt; margin: 1mm 0;">Tel: ${businessConfig.phone || 'N/A'}</p>
         </div>
 
-        <div style="font-size: 8pt; margin-bottom: 5mm; border-bottom: 0.5pt dashed #000; padding-bottom: 3mm;">
+        <div style="font-size: 8pt; margin-bottom: 6mm; border-bottom: 0.5pt dashed #000; padding-bottom: 4mm;">
           <div style="display: flex; justify-content: space-between;"><span>No. TICKET:</span><span>#${ticket.id.slice(-6)}</span></div>
           <div style="display: flex; justify-content: space-between;"><span>FECHA:</span><span>${dateStr}</span></div>
           <div style="display: flex; justify-content: space-between;"><span>AGENTE:</span><span>${(ticket.sellerName || 'SISTEMA').toUpperCase()}</span></div>
@@ -112,64 +113,72 @@ export const POS: React.FC = () => {
           <div style="display: flex; justify-content: space-between;"><span>TERMINAL:</span><span>${activeTerminal?.name || '001'}</span></div>
         </div>
 
-        <table style="width: 100%; font-size: 8pt; border-collapse: collapse; margin-bottom: 5mm;">
+        <table style="width: 100%; font-size: 8pt; border-collapse: collapse; margin-bottom: 6mm;">
           <thead style="border-bottom: 1pt solid #000;">
             <tr>
-              <th style="text-align: left; padding-bottom: 1mm;">DETALLE</th>
-              <th style="text-align: center; padding-bottom: 1mm;">CT</th>
-              <th style="text-align: right; padding-bottom: 1mm;">TOTAL</th>
+              <th style="text-align: left; padding-bottom: 2mm;">DETALLE</th>
+              <th style="text-align: center; padding-bottom: 2mm;">CT</th>
+              <th style="text-align: right; padding-bottom: 2mm;">TOTAL</th>
             </tr>
           </thead>
-          <tbody style="padding-top: 1mm;">
+          <tbody style="padding-top: 2mm;">
             ${ticket.items.map(i => `
               <tr>
-                <td style="padding: 1.5mm 0; line-height: 1;">
+                <td style="padding: 2mm 0; line-height: 1.1; vertical-align: top;">
                   <span style="font-weight: bold; display: block;">${i.name.toUpperCase()}</span>
                   ${i.sku ? `<span style="font-size: 7pt; color: #333;">${i.sku}</span>` : ''}
                 </td>
-                <td style="text-align: center; padding: 1.5mm 0;">${i.quantity}</td>
-                <td style="text-align: right; padding: 1.5mm 0; font-weight: bold;">${symbol}${((i.quantity) * convertValue(getEffectiveUnitPrice(i))).toFixed(2)}</td>
+                <td style="text-align: center; padding: 2mm 0; vertical-align: top;">${i.quantity}</td>
+                <td style="text-align: right; padding: 2mm 0; font-weight: bold; vertical-align: top; font-family: monospace;">${symbol}${((i.quantity) * convertValue(getEffectiveUnitPrice(i))).toFixed(2)}</td>
               </tr>
             `).join('')}
           </tbody>
         </table>
 
-        <div style="font-size: 9pt; border-top: 0.5pt solid #000; padding-top: 3mm; margin-bottom: 5mm;">
-          <div style="display: flex; justify-content: space-between;"><span>SUBTOTAL:</span><span>${symbol}${ticket.subtotal.toFixed(2)}</span></div>
-          ${ticket.discount > 0 ? `<div style="display: flex; justify-content: space-between; color: #444;"><span>DESCUENTO:</span><span>-${symbol}${ticket.discount.toFixed(2)}</span></div>` : ''}
-          <div style="display: flex; justify-content: space-between; font-weight: bold; font-size: 11pt; margin-top: 2mm; border-top: 0.5pt solid #000; padding-top: 2mm;">
+        <div style="font-size: 9pt; border-top: 0.5pt solid #000; padding-top: 4mm; margin-bottom: 6mm;">
+          <div style="display: flex; justify-content: space-between; align-items: baseline; gap: 8px; margin-bottom: 1mm;">
+            <span>SUBTOTAL:</span>
+            <span style="font-family: monospace; text-align: right; word-break: break-all;">${symbol}${ticket.subtotal.toFixed(2)}</span>
+          </div>
+          ${ticket.discount > 0 ? `
+          <div style="display: flex; justify-content: space-between; align-items: baseline; gap: 8px; color: #444; margin-bottom: 1mm;">
+            <span>DESCUENTO:</span>
+            <span style="font-family: monospace; text-align: right; word-break: break-all;">-${symbol}${ticket.discount.toFixed(2)}</span>
+          </div>` : ''}
+          <div style="display: flex; justify-content: space-between; align-items: baseline; gap: 8px; font-weight: bold; font-size: 11pt; margin-top: 3mm; border-top: 1pt solid #000; padding-top: 3mm;">
             <span>TOTAL (${ticket.currency}):</span>
-            <span>${symbol}${ticket.total.toFixed(2)}</span>
+            <span style="font-family: monospace; text-align: right; word-break: break-all;">${symbol}${ticket.total.toFixed(2)}</span>
           </div>
         </div>
 
-        <div style="font-size: 8pt; margin-bottom: 5mm; background: #f9f9f9; padding: 2mm; border-radius: 2mm;">
-          <p style="margin: 0 0 1mm 0; font-weight: bold; border-bottom: 0.2pt solid #ccc; padding-bottom: 1mm;">DESGLOSE DE PAGO:</p>
+        <div style="font-size: 8pt; margin-bottom: 6mm; background: #f9f9f9; padding: 3mm; border-radius: 2mm;">
+          <p style="margin: 0 0 2mm 0; font-weight: bold; border-bottom: 0.2pt solid #ccc; padding-bottom: 1mm;">DESGLOSE DE PAGO:</p>
           ${ticket.payments.map(p => `
-            <div style="display: flex; justify-content: space-between; margin-bottom: 0.5mm;">
+            <div style="display: flex; justify-content: space-between; align-items: baseline; gap: 8px; margin-bottom: 1mm;">
               <span>${p.method === 'CREDIT' ? 'CRÉDITO CLIENTE' : p.method.toUpperCase()}:</span>
-              <span>${currencies.find(c => c.code === p.currency)?.symbol || '$'}${p.amount.toFixed(2)}</span>
+              <span style="font-weight: bold; font-family: monospace; text-align: right; word-break: break-all;">${currencies.find(c => c.code === p.currency)?.symbol || '$'}${p.amount.toFixed(2)}</span>
             </div>
           `).join('')}
           
           ${changeCUP > 0.009 ? `
-            <div style="display: flex; justify-content: space-between; margin-top: 2mm; font-weight: bold; color: #000; border-top: 0.2pt dashed #000; padding-top: 1.5mm;">
+            <div style="display: flex; justify-content: space-between; align-items: baseline; gap: 8px; margin-top: 3mm; font-weight: bold; color: #000; border-top: 0.5pt dashed #000; padding-top: 2mm;">
               <span>CAMBIO ENTREGADO:</span>
-              <span>₱${changeCUP.toFixed(2)} CUP</span>
+              <span style="font-family: monospace; text-align: right; word-break: break-all;">₱${changeCUP.toFixed(2)} CUP</span>
             </div>
           ` : ''}
 
           ${ticket.clientRemainingCredit !== undefined ? `
-            <div style="display: flex; justify-content: space-between; margin-top: 2mm; font-style: italic; color: #555;">
+            <div style="display: flex; justify-content: space-between; align-items: baseline; gap: 8px; margin-top: 3mm; font-style: italic; color: #555;">
               <span>SALDO RESTANTE:</span>
-              <span>$${ticket.clientRemainingCredit.toFixed(2)} CUP</span>
+              <span style="font-family: monospace; text-align: right; word-break: break-all;">$${ticket.clientRemainingCredit.toFixed(2)} CUP</span>
             </div>
           ` : ''}
         </div>
 
-        <div style="text-align: center; margin-top: 8mm; font-size: 8pt; border-top: 0.5pt dashed #000; padding-top: 4mm;">
-          <p style="margin: 0; font-weight: bold;">${businessConfig.footerMessage || '¡GRACIAS POR SU PREFERENCIA!'}</p>
-          <p style="margin: 3mm 0 0 0; opacity: 0.4; font-size: 6pt;">POWERED BY CAPIBARIO TPV</p>
+        <div style="text-align: center; margin-top: 10mm; font-size: 8pt; border-top: 0.5pt dashed #000; padding-top: 5mm;">
+          <p style="margin: 0; font-weight: bold; color: #444;">${businessConfig.footerMessage || '¡GRACIAS POR SU PREFERENCIA!'}</p>
+          <p style="margin: 4mm 0 1mm 0; opacity: 0.5; font-size: 7pt; font-weight: bold; letter-spacing: 1px;">POWERED BY CAPIBARIO TPV</p>
+          <p style="margin: 0; opacity: 0.3; font-size: 7pt; color: #666;">www.capibario.com</p>
         </div>
       </div>
     `;
@@ -195,15 +204,15 @@ export const POS: React.FC = () => {
     const overpay = totalPaid - ticket.total;
     const changeCUP = overpay > 0.01 ? (overpay * (rates[ticket.currency] || 1)) : 0;
     
-    let y = 12;
-    const margin = 7;
+    let y = 15;
+    const margin = 10;
     const width = 80;
     const innerWidth = width - (margin * 2);
 
     // Encabezado
     doc.setFont('courier', 'bold');
     doc.setFontSize(11);
-    doc.text(businessConfig.name.toUpperCase(), 40, y, { align: 'center' }); y += 5;
+    doc.text(businessConfig.name.toUpperCase(), 40, y, { align: 'center' }); y += 6;
     
     doc.setFontSize(7);
     doc.setFont('courier', 'normal');
@@ -213,57 +222,78 @@ export const POS: React.FC = () => {
     doc.text(`NIT: ${businessConfig.taxId || 'N/A'}`, 40, y, { align: 'center' }); y += 4;
     doc.text(`TEL: ${businessConfig.phone || 'N/A'}`, 40, y, { align: 'center' }); y += 6;
 
-    // Fix: Using 'any' cast because setLineDash is sometimes missing from jsPDF type definitions
     (doc as any).setLineDash([1, 1]);
     doc.line(margin, y, width - margin, y); y += 6;
-    // Fix: Using 'any' cast to reset line dash pattern
     (doc as any).setLineDash([]);
 
     // Meta info
     doc.setFont('courier', 'bold');
-    doc.text(`TICKET:`, margin, y); doc.text(`#${ticket.id.slice(-6)}`, width - margin, y, { align: 'right' }); y += 3.5;
+    doc.text(`TICKET:`, margin, y); doc.text(`#${ticket.id.slice(-6)}`, width - margin, y, { align: 'right' }); y += 4;
     doc.setFont('courier', 'normal');
-    doc.text(`FECHA:`, margin, y); doc.text(dateStr, width - margin, y, { align: 'right' }); y += 3.5;
-    doc.text(`AGENTE:`, margin, y); doc.text((ticket.sellerName || 'SISTEMA').toUpperCase(), width - margin, y, { align: 'right' }); y += 3.5;
+    doc.text(`FECHA:`, margin, y); doc.text(dateStr, width - margin, y, { align: 'right' }); y += 4;
+    doc.text(`AGENTE:`, margin, y); doc.text((ticket.sellerName || 'SISTEMA').toUpperCase(), width - margin, y, { align: 'right' }); y += 4;
     if (ticket.clientId) {
       const client = clients.find(c => c.id === ticket.clientId);
-      doc.text(`CLIENTE:`, margin, y); doc.text((client?.name || 'GENÉRICO').toUpperCase(), width - margin, y, { align: 'right' }); y += 3.5;
+      doc.text(`CLIENTE:`, margin, y); doc.text((client?.name || 'GENÉRICO').toUpperCase(), width - margin, y, { align: 'right' }); y += 4;
     }
     y += 4;
 
     // Tabla de ítems
     doc.setFont('courier', 'bold');
     doc.line(margin, y, width - margin, y); y += 4;
-    doc.text('DETALLE', margin, y); doc.text('CT', 50, y); doc.text('TOTAL', width - margin, y, { align: 'right' }); y += 3;
+    doc.text('DETALLE', margin, y); doc.text('CT', 48, y); doc.text('TOTAL', width - margin, y, { align: 'right' }); y += 3;
     doc.line(margin, y, width - margin, y); y += 5;
     
     doc.setFont('courier', 'normal');
     ticket.items.forEach(item => {
       const linePrice = convertValue(getEffectiveUnitPrice(item));
       const lineTotal = (item.quantity * linePrice).toFixed(2);
+      const valStr = `${symbol}${lineTotal}`;
       
       const itemName = item.name.toUpperCase();
-      const splitName = doc.splitTextToSize(itemName, 35);
+      const splitName = doc.splitTextToSize(itemName, 32);
       
       doc.text(splitName, margin, y);
-      doc.text(String(item.quantity), 50, y);
-      doc.text(`${symbol}${lineTotal}`, width - margin, y, { align: 'right' });
+      doc.text(String(item.quantity), 48, y);
       
-      y += (splitName.length * 3.5) + 1;
+      // Manejo de importes largos en tabla
+      if (doc.getTextWidth(valStr) > 20) {
+        y += (splitName.length * 3.5);
+        doc.text(valStr, width - margin, y, { align: 'right' });
+        y += 4;
+      } else {
+        doc.text(valStr, width - margin, y, { align: 'right' });
+        y += (splitName.length * 3.5) + 1;
+      }
     });
 
     y += 2;
-    doc.line(margin, y, width - margin, y); y += 5;
+    doc.line(margin, y, width - margin, y); y += 6;
     
-    // Totales
-    doc.text(`SUBTOTAL:`, margin, y); doc.text(`${symbol}${ticket.subtotal.toFixed(2)}`, width - margin, y, { align: 'right' }); y += 4;
+    // Totales - Con validación de ancho
+    const renderRow = (label: string, value: string, isBold: boolean = false, fontSize: number = 7) => {
+        doc.setFontSize(fontSize);
+        doc.setFont('courier', isBold ? 'bold' : 'normal');
+        const valWidth = doc.getTextWidth(value);
+        const lblWidth = doc.getTextWidth(label);
+        
+        if (valWidth + lblWidth + 5 > innerWidth) {
+            doc.text(label, margin, y); y += 4;
+            doc.text(value, width - margin, y, { align: 'right' }); y += 5;
+        } else {
+            doc.text(label, margin, y);
+            doc.text(value, width - margin, y, { align: 'right' }); y += 4;
+        }
+    };
+
+    renderRow('SUBTOTAL:', `${symbol}${ticket.subtotal.toFixed(2)}`);
     if(ticket.discount > 0) {
-      doc.text(`DESCUENTO:`, margin, y); doc.text(`-${symbol}${ticket.discount.toFixed(2)}`, width - margin, y, { align: 'right' }); y += 4;
+      renderRow('DESCUENTO:', `-${symbol}${ticket.discount.toFixed(2)}`);
     }
     
-    doc.setFontSize(10);
-    doc.setFont('courier', 'bold');
-    doc.text(`TOTAL (${ticket.currency}):`, margin, y); doc.text(`${symbol}${ticket.total.toFixed(2)}`, width - margin, y, { align: 'right' }); y += 8;
+    y += 2;
+    renderRow(`TOTAL (${ticket.currency}):`, `${symbol}${ticket.total.toFixed(2)}`, true, 10);
+    y += 6;
 
     // Pagos y Cambio
     doc.setFontSize(7);
@@ -272,38 +302,33 @@ export const POS: React.FC = () => {
     doc.setFont('courier', 'normal');
     ticket.payments.forEach(p => {
       const pSymbol = currencies.find(c => c.code === p.currency)?.symbol || '$';
-      doc.text(`- ${p.method === 'CREDIT' ? 'CRÉDITO CLIENTE' : p.method.toUpperCase()}:`, margin + 2, y);
-      doc.text(`${pSymbol}${p.amount.toFixed(2)}`, width - margin, y, { align: 'right' });
-      y += 3.5;
+      renderRow(`- ${p.method === 'CREDIT' ? 'CRÉDITO CLIENTE' : p.method.toUpperCase()}:`, `${pSymbol}${p.amount.toFixed(2)}`, false, 7);
     });
 
     if (changeCUP > 0.009) {
       y += 2;
-      doc.setFont('courier', 'bold');
-      doc.text(`CAMBIO ENTREGADO:`, margin, y); 
-      doc.text(`₱${changeCUP.toFixed(2)} CUP`, width - margin, y, { align: 'right' }); 
-      y += 4;
+      renderRow(`CAMBIO ENTREGADO:`, `₱${changeCUP.toFixed(2)} CUP`, true, 7);
     }
 
     if (ticket.clientRemainingCredit !== undefined) {
       y += 1;
-      doc.setFont('courier', 'italic');
-      doc.text(`SALDO RESTANTE:`, margin, y); 
-      doc.text(`$${ticket.clientRemainingCredit.toFixed(2)} CUP`, width - margin, y, { align: 'right' }); 
-      y += 4;
+      renderRow(`SALDO RESTANTE:`, `$${ticket.clientRemainingCredit.toFixed(2)} CUP`, false, 7);
     }
 
     // Footer
-    y += 10;
+    y += 12;
     doc.setFont('courier', 'bold');
     doc.setFontSize(8);
     const splitFooter = doc.splitTextToSize(businessConfig.footerMessage || '¡GRACIAS POR SU COMPRA!', innerWidth);
     doc.text(splitFooter, 40, y, { align: 'center' });
     y += (splitFooter.length * 4);
 
+    doc.setFontSize(7);
+    doc.text('POWERED BY CAPIBARIO TPV', 40, y + 6, { align: 'center' });
     doc.setFontSize(6);
+    doc.setTextColor(150, 150, 150);
     doc.setFont('courier', 'normal');
-    doc.text('POWERED BY CAPIBARIO TPV', 40, y + 5, { align: 'center' });
+    doc.text('www.capibario.com', 40, y + 10, { align: 'center' });
 
     doc.save(`Ticket_${ticket.id.slice(-6)}.pdf`);
   };
@@ -367,7 +392,7 @@ export const POS: React.FC = () => {
 
   if (!currentUser) return (
       <div className="h-screen flex items-center justify-center bg-slate-900">
-          <div className="bg-white p-12 rounded-[3rem] shadow-2xl text-center max-w-sm w-full border border-gray-100">
+          <div className="bg-white p-12 rounded-[3rem] shadow-2xl text-center max-sm w-full border border-gray-100">
               <div className="w-20 h-20 bg-brand-50 rounded-full flex items-center justify-center mx-auto mb-8 text-brand-600 shadow-inner"><Lock size={40} /></div>
               <h2 className="text-2xl font-black mb-2 text-slate-800 uppercase tracking-tighter">Terminal Bloqueada</h2>
               <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mb-10">Introduzca su PIN de Operador</p>
@@ -377,7 +402,7 @@ export const POS: React.FC = () => {
       </div>
   );
 
-  if (!activeShift) return <div className="h-full"><ShiftManager /></div>;
+  if (!activeShift || showShiftManager) return <div className="h-full"><ShiftManager onOpen={() => setShowShiftManager(false)} /></div>;
 
   return (
     <div className="flex h-screen bg-gray-100 overflow-hidden relative font-sans animate-in fade-in duration-500">
@@ -406,13 +431,13 @@ export const POS: React.FC = () => {
                         </button>
                     ))}
                 </div>
-                {/* BOTÓN CIERRE RÁPIDO */}
+                {/* BOTÓN CIERRE RÁPIDO - Corregido para no ir a configuración */}
                 <button 
-                  onClick={() => setView(View.CONFIGURATION)} // O una vista específica de turnos si se decide separar
-                  title="Cierre de Turno"
-                  className="hidden md:flex p-3.5 bg-slate-900 text-white rounded-2xl hover:bg-red-600 transition-all shadow-lg"
+                  onClick={() => setShowShiftManager(true)} 
+                  title="Gestión de Turno"
+                  className="hidden md:flex p-3.5 bg-slate-900 text-white rounded-2xl hover:bg-brand-600 transition-all shadow-lg"
                 >
-                  <LogOut size={18}/>
+                  <Unlock size={18}/>
                 </button>
             </div>
 
@@ -434,18 +459,34 @@ export const POS: React.FC = () => {
                 <div className="grid grid-cols-4 md:grid-cols-4 lg:grid-cols-7 gap-1.5 md:gap-3">
                     {filteredProducts.map(p => {
                         const effectivePrice = convertValue(p.price);
-                        const stock = (p.variants?.length ? p.variants.reduce((acc, v) => acc + (v.stock || 0), 0) : p.stock) || 0;
+                        // FIX STOCK TOTAL: Base + Variants - Sum in Cart
+                        const totalInitialStock = (p.stock || 0) + (p.variants?.reduce((acc, v) => acc + (v.stock || 0), 0) || 0);
+                        const totalInCart = cart.filter(item => item.id === p.id).reduce((acc, item) => acc + item.quantity, 0);
+                        const displayStock = totalInitialStock - totalInCart;
+
                         return (
                             <button 
                                 key={p.id}
                                 onClick={() => handleAddToCart(p)}
-                                disabled={stock <= 0}
-                                className={`bg-white rounded-xl md:rounded-3xl border border-slate-100 p-1.5 md:p-2 text-left flex flex-col h-auto group hover:shadow-xl hover:-translate-y-1 transition-all ${stock <= 0 ? 'opacity-50 grayscale' : ''}`}
+                                disabled={displayStock <= 0}
+                                className={`bg-white rounded-xl md:rounded-3xl border border-slate-100 p-1.5 md:p-2 text-left flex flex-col h-auto group hover:shadow-xl hover:-translate-y-1 transition-all ${displayStock <= 0 ? 'opacity-50 grayscale' : ''}`}
                             >
                                 <div className="aspect-square bg-gray-50 rounded-lg md:rounded-2xl mb-1.5 md:mb-3 overflow-hidden relative">
                                     {p.image ? <img src={p.image} className="w-full h-full object-cover" /> : <Layers className="w-full h-full p-2 md:p-4 text-slate-200" />}
-                                    <div className="absolute top-1 right-1 bg-slate-900/80 backdrop-blur-md px-1.5 py-0.5 rounded-full text-[6px] md:text-[8px] font-black text-white">{stock} U</div>
-                                    {p.variants?.length > 0 && <div className="absolute bottom-1 left-1 bg-brand-500 text-white px-1.5 py-0.5 rounded-full text-[6px] md:text-[8px] font-black uppercase">VAR</div>}
+                                    <div className="absolute top-1 right-1 bg-slate-900/80 backdrop-blur-md px-1.5 py-0.5 rounded-full text-[6px] md:text-[8px] font-black text-white">{displayStock} U</div>
+                                    {p.variants?.length > 0 && (
+                                        <div className="absolute bottom-1 left-1 right-1 flex flex-wrap gap-0.5 pointer-events-none">
+                                            {p.variants.map(v => {
+                                                const variantCartQty = cart.filter(item => item.id === p.id && item.selectedVariantId === v.id).reduce((acc, item) => acc + item.quantity, 0);
+                                                const avail = (v.stock || 0) - variantCartQty;
+                                                return (
+                                                    <span key={v.id} className="bg-brand-500/90 backdrop-blur-sm text-white px-1 py-0.5 rounded-sm text-[5px] md:text-[7px] font-black uppercase leading-tight shadow-sm border border-white/20">
+                                                        {v.name}: {avail}
+                                                    </span>
+                                                );
+                                            })}
+                                        </div>
+                                    )}
                                 </div>
                                 <h3 className="text-[7px] md:text-[9px] font-black text-slate-800 uppercase line-clamp-1 md:line-clamp-2 leading-tight mb-1 md:mb-2 flex-1 tracking-tighter">{p.name}</h3>
                                 <div className="flex justify-between items-center">
@@ -579,7 +620,7 @@ export const POS: React.FC = () => {
                     </div>
                 </div>
                 <div className="flex gap-2">
-                   <button onClick={() => setView(View.CONFIGURATION)} className="bg-slate-800 text-white p-3 rounded-xl"><LogOut size={16}/></button>
+                   <button onClick={() => setShowShiftManager(true)} className="bg-slate-800 text-white p-3 rounded-xl"><Unlock size={16}/></button>
                    <button onClick={() => setIsTicketOpen(true)} className="bg-white text-slate-900 px-6 py-3 rounded-xl font-black text-[10px] uppercase tracking-widest flex items-center gap-2">Abrir <ChevronRight size={14}/></button>
                 </div>
             </div>
@@ -676,7 +717,7 @@ export const POS: React.FC = () => {
 
         {showTicketModal && currentTicket && (
             <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-md flex items-center justify-center z-[300] p-4">
-                <div className="bg-white p-10 rounded-[4rem] w-full max-w-sm text-center shadow-2xl animate-in zoom-in">
+                <div className="bg-white p-10 rounded-[4rem] w-full max-sm text-center shadow-2xl animate-in zoom-in">
                     <div className="bg-emerald-50 text-emerald-600 p-8 rounded-full w-24 h-24 flex items-center justify-center mx-auto mb-8 shadow-inner"><Receipt size={48}/></div>
                     <h3 className="text-3xl font-black uppercase tracking-tighter mb-2">Venta Exitosa</h3>
                     <p className="text-[10px] text-slate-400 font-black uppercase tracking-widest mb-6">Comprobante ID: {currentTicket.id.slice(-6)}</p>
