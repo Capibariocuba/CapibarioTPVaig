@@ -425,12 +425,13 @@ export const POS: React.FC = () => {
                         </button>
                     ))}
                 </div>
+                {/* BOTON CANDADO: Ahora va directo al flujo de cierre que solicita PIN */}
                 <button 
                   onClick={() => setShowShiftManager(true)} 
-                  title="Gestión de Turno"
-                  className="hidden md:flex p-3.5 bg-slate-900 text-white rounded-2xl hover:bg-brand-600 transition-all shadow-lg"
+                  title="Finalizar Turno"
+                  className="hidden md:flex p-3.5 bg-red-600 text-white rounded-2xl hover:bg-red-700 transition-all shadow-lg"
                 >
-                  <Unlock size={18}/>
+                  <Lock size={18}/>
                 </button>
             </div>
 

@@ -1,47 +1,46 @@
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { useStore } from '../context/StoreContext';
-import { Currency, View, Role, Product, Sale, LedgerEntry, Shift } from '../types';
-import { Lock, Unlock, EyeOff, DollarSign, Receipt, Printer, AlertTriangle, ArrowDown, ArrowUp, X, Key, CheckSquare, Banknote, FileDown, CheckCircle, Package } from 'lucide-react';
-import { jsPDF } from 'jspdf';
+import { Currency, View, Role, Product, Sale, Shift, User } from '../types';
+import { Unlock, DollarSign, Printer, AlertTriangle, ArrowUp, X, Key, CheckCircle, Package, Receipt, Truck } from 'lucide-react';
 
 export const ShiftManager: React.FC<{ onOpen?: () => void }> = ({ onOpen }) => {
   const { 
-    activeShift, openShift, closeShift, getCurrentCash, setView, currentUser, validatePin, 
-    sales, ledger, products, businessConfig, currencies, notify, logout 
+    activeShift, openShift, closeShift, getCurrentCash, currentUser, validatePin, 
+    sales, products, businessConfig, notify 
   } = useStore();
   
-  const [showZReport, setShowZReport] = useState(false);
-  const [showClosureModal, setShowClosureModal] = useState(false);
-  const [showPinModal, setShowPinModal] = useState(false);
-  const [superiorPin, setSuperiorPin] = useState('');
-  const [lastClosedShift, setLastClosedShift] = useState<Shift | null>(null);
+  // Estados de flujo
+  const [step, setStep] = useState<'IDLE' | 'PIN' | 'ARQUEO' | 'Z_REPORT'>(activeShift ? 'PIN' : 'IDLE');
+  const [authUserInfo, setAuthUserInfo] = useState<User | null>(null);
   
+  // Estados de apertura
+  const [startCashCUP, setStartCashCUP] = useState('');
+  
+  // Estados de cierre
+  const [pinInput, setPinInput] = useState('');
   const [actualCounts, setActualCounts] = useState<Record<string, string>>({});
-  const [startCash, setStartCash] = useState<Record<string, string>>({ [Currency.CUP]: '' });
+  const [lastShiftSummary, setLastShiftSummary] = useState<any>(null);
 
-  const handleOpenShift = () => {
-    const cash: Record<string, number> = { CUP: parseFloat(startCash.CUP) || 0 };
-    openShift(cash);
-    if (onOpen) onOpen();
-  };
-
+  // Utilidades
   const formatNum = (num: number) => new Intl.NumberFormat('es-CU', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(num);
 
-  const shiftMetrics = useMemo(() => {
-    if (!activeShift) return null;
+  const expectedMetrics = useMemo(() => {
+    if (!activeShift) return {};
     const totals: Record<string, number> = {};
     const turnSales = sales.filter(s => s.shiftId === activeShift.id);
     const systemCash = getCurrentCash();
     
-    Object.entries(systemCash).forEach(([curr, val]: [string, any]) => {
+    // Solo efectivo tracked por getCurrentCash
+    Object.entries(systemCash).forEach(([curr, val]) => {
       totals[`CASH_${curr}`] = val as number;
     });
 
+    // Otros métodos de pago sumados de las ventas
     turnSales.forEach(sale => {
       sale.payments.forEach(pay => {
-        const key = `${pay.method}_${pay.currency}`;
         if (pay.method !== 'CASH') {
+          const key = `${pay.method}_${pay.currency}`;
           totals[key] = (totals[key] || 0) + pay.amount;
         }
       });
@@ -49,352 +48,290 @@ export const ShiftManager: React.FC<{ onOpen?: () => void }> = ({ onOpen }) => {
     return totals;
   }, [activeShift, sales, getCurrentCash]);
 
-  // Prompt 2: Reporte Z con Movimiento de Inventario
-  const inventoryMovements = useMemo(() => {
-    const currentShift = activeShift || lastClosedShift;
+  const handleOpenShift = () => {
+    const val = parseFloat(startCashCUP) || 0;
+    openShift({ CUP: val });
+    if (onOpen) onOpen();
+  };
+
+  const handleVerifyPIN = async () => {
+    const user = await validatePin(pinInput);
+    if (user) {
+      setAuthUserInfo(user);
+      setStep('ARQUEO');
+      setPinInput('');
+    } else {
+      notify("PIN inválido", "error");
+      setPinInput('');
+    }
+  };
+
+  const inventoryReportData = useMemo(() => {
+    const currentShift = activeShift || lastShiftSummary?.shift;
     if (!currentShift || !currentShift.initialStock) return [];
     
     const turnSales = sales.filter(s => s.shiftId === currentShift.id);
-    const moves: Record<string, { name: string, start: number, entries: string, salesCount: number, final: number }> = {};
-    
-    // Capturar productos y variantes involucrados
+    const results: any[] = [];
+
     products.forEach(p => {
-        const startParent = currentShift.initialStock?.[p.id] || 0;
-        const salesParent = turnSales.reduce((acc, s) => {
-            const item = s.items.find(i => i.id === p.id && !i.selectedVariantId);
-            return acc + (item?.quantity || 0);
-        }, 0);
-        
-        if (startParent > 0 || salesParent > 0) {
-            moves[p.id] = { 
-                name: p.name, 
-                start: startParent, 
-                entries: '—', 
-                salesCount: salesParent, 
-                final: p.stock || 0 
-            };
-        }
+      // Stock Inicial
+      const startStock = currentShift.initialStock[p.id] || 0;
+      // Ventas Base
+      const soldQty = turnSales.reduce((acc, sale) => {
+        const item = sale.items.find(i => i.id === p.id && !i.selectedVariantId);
+        return acc + (item?.quantity || 0);
+      }, 0);
 
-        p.variants.forEach(v => {
-            const vKey = `${p.id}-${v.id}`;
-            const startV = currentShift.initialStock?.[vKey] || 0;
-            const salesV = turnSales.reduce((acc, s) => {
-                const item = s.items.find(i => i.selectedVariantId === v.id);
-                return acc + (item?.quantity || 0);
-            }, 0);
-
-            if (startV > 0 || salesV > 0) {
-                moves[vKey] = { 
-                    name: `${p.name} (${v.name})`, 
-                    start: startV, 
-                    entries: '—', 
-                    salesCount: salesV, 
-                    final: v.stock || 0 
-                };
-            }
+      if (startStock > 0 || soldQty > 0) {
+        results.push({
+          name: p.name,
+          start: startStock,
+          entries: '—', // Reaprovisionamientos no implementados aún
+          sales: soldQty,
+          final: p.stock
         });
+      }
+
+      // Variantes
+      p.variants.forEach(v => {
+        const vKey = `${p.id}-${v.id}`;
+        const startV = currentShift.initialStock[vKey] || 0;
+        const soldV = turnSales.reduce((acc, sale) => {
+          const item = sale.items.find(i => i.selectedVariantId === v.id);
+          return acc + (item?.quantity || 0);
+        }, 0);
+
+        if (startV > 0 || soldV > 0) {
+          results.push({
+            name: `${p.name} (${v.name})`,
+            start: startV,
+            entries: '—',
+            sales: soldV,
+            final: v.stock
+          });
+        }
+      });
     });
+    return results;
+  }, [sales, products, activeShift, lastShiftSummary]);
 
-    return Object.values(moves);
-  }, [sales, activeShift, lastClosedShift, products]);
-
-  const handleVerifySuperior = async () => {
-    const user = await validatePin(superiorPin);
-    if (user) {
-        // Proceder al modal de conteo real
-        // Aquí guardamos el rol para saber si es ciego o transparente
-        setShowPinModal(false);
-        setSuperiorPin('');
-        setShowClosureModal(true);
-    } else {
-        notify("PIN inválido", "error");
-        setSuperiorPin('');
-    }
-  };
-
-  const handleProcessFinalClosure = (authorizedBy: string) => {
-    const finalActual: Record<string, number> = {};
-    Object.entries(actualCounts).forEach(([k, v]: [string, any]) => finalActual[k] = parseFloat(v as string) || 0);
+  const handleConfirmClosure = () => {
+    const isAdmin = authUserInfo?.role === Role.ADMIN || authUserInfo?.role === Role.ACCOUNTANT;
+    const finalCounts: Record<string, number> = {};
     
-    // Validar diferencia cero
-    const hasDiff = Object.entries(shiftMetrics || {}).some(([key, expected]) => {
-        const actual = finalActual[key] || 0;
-        return Math.abs((expected as number) - actual) > 0.01;
+    let hasMismatch = false;
+    Object.keys(expectedMetrics).forEach(key => {
+      const actual = parseFloat(actualCounts[key] || '0');
+      const expected = expectedMetrics[key];
+      if (Math.abs(actual - expected) > 0.01) hasMismatch = true;
+      finalCounts[key] = actual;
     });
 
-    if (hasDiff) {
-        notify("No se puede cerrar: Hay diferencias entre sistema y conteo real.", "error");
-        return;
+    if (hasMismatch) {
+      notify("Existen diferencias en el arqueo. Verifique el conteo.", "error");
+      return;
     }
 
-    const closingShift = { 
-      ...activeShift!, 
-      closedAt: new Date().toISOString(), 
-      closedBy: authorizedBy, 
-      actualCash: finalActual 
+    // Capturar datos para el reporte Z antes de limpiar
+    const summary = {
+      shift: { ...activeShift },
+      metrics: { ...expectedMetrics },
+      actual: { ...finalCounts },
+      inventory: [...inventoryReportData],
+      totalGross: sales.filter(s => s.shiftId === activeShift!.id).reduce((a, b) => a + b.total, 0),
+      closedAt: new Date().toISOString(),
+      closedBy: authUserInfo?.name
     };
-    
-    setLastClosedShift(closingShift);
-    closeShift(finalActual, authorizedBy);
-    setShowClosureModal(false);
-    setShowZReport(true);
+
+    setLastShiftSummary(summary);
+    closeShift(finalCounts, authUserInfo?.name || 'Sistema');
+    setStep('Z_REPORT');
   };
 
-  const getReportZHTML = () => {
-    if (!lastClosedShift) return '';
-    const turnSales = sales.filter(s => s.shiftId === lastClosedShift.id);
-    const totalGross = turnSales.reduce((acc: number, s: any) => acc + (s.total as number), 0);
-
+  const getZReportHTML = () => {
+    if (!lastShiftSummary) return '';
+    const s = lastShiftSummary;
     return `
-      <div class="center">
-        <h2 class="bold" style="font-size: 13pt; margin: 0;">${businessConfig.name.toUpperCase()}</h2>
-        <p style="margin: 1mm 0;">REPORTE DE CIERRE Z</p>
-        <p class="bold">ID: ${lastClosedShift.id.slice(-8)}</p>
-      </div>
-      
-      <div class="dashed"></div>
-      
-      <div style="font-size: 8pt; line-height: 1.4;">
-        APERTURA: ${new Date(lastClosedShift.openedAt).toLocaleString()}<br>
-        CIERRE: ${new Date(lastClosedShift.closedAt!).toLocaleString()}<br>
-        CAJERO: ${lastClosedShift.openedBy.toUpperCase()}<br>
-        AUDITOR: ${lastClosedShift.closedBy!.toUpperCase()}
-      </div>
-
-      <div class="dashed"></div>
-      <h4 class="center bold" style="margin: 0;">RESUMEN DE CAJA</h4>
-      <table>
-        <thead>
-          <tr style="border-bottom: 1px solid #000;">
-            <th>MÉTODO</th>
-            <th class="right">REAL</th>
+      <div style="text-align:center; font-family:Courier; font-size:10pt;">
+        <h2 style="margin:0;">${businessConfig.name.toUpperCase()}</h2>
+        <p style="margin:2mm 0;">REPORTE DE CIERRE Z</p>
+        <p>ID: ${s.shift.id.slice(-8)}</p>
+        <div style="border-top:1px dashed #000; margin:3mm 0;"></div>
+        <div style="text-align:left; font-size:8pt;">
+          APERTURA: ${new Date(s.shift.openedAt).toLocaleString()}<br>
+          CIERRE: ${new Date(s.closedAt).toLocaleString()}<br>
+          CAJERO: ${s.shift.openedBy.toUpperCase()}<br>
+          AUDITOR: ${s.closedBy.toUpperCase()}
+        </div>
+        <div style="border-top:1px dashed #000; margin:3mm 0;"></div>
+        <h4 style="margin:0;">ARQUEO DE CAJA</h4>
+        <table style="width:100%; font-size:8pt; border-collapse:collapse;">
+          <tr style="border-bottom:1px solid #000;"><th style="text-align:left;">METODO</th><th style="text-align:right;">REAL</th></tr>
+          ${Object.entries(s.actual).map(([k, v]) => `<tr><td>${k.replace('_',' ')}</td><td style="text-align:right;">$${formatNum(v as number)}</td></tr>`).join('')}
+        </table>
+        <div style="border-top:1px dashed #000; margin:3mm 0;"></div>
+        <h4 style="margin:0;">MOVIMIENTO INVENTARIO</h4>
+        <table style="width:100%; font-size:7pt; border-collapse:collapse; margin-top:2mm;">
+          <tr style="border-bottom:1px solid #000;">
+            <th style="text-align:left;">ITEM</th>
+            <th style="text-align:right;">INI</th>
+            <th style="text-align:right;">VND</th>
+            <th style="text-align:right;">FIN</th>
           </tr>
-        </thead>
-        <tbody>
-          ${Object.entries(shiftMetrics || {}).map(([key, expected]: [string, any]) => {
-            const actual = lastClosedShift.actualCash?.[key] || 0;
-            return `<tr><td>${key.replace('_',' ')}</td><td class="right">$${formatNum(actual)}</td></tr>`;
-          }).join('')}
-        </tbody>
-      </table>
-
-      <div class="dashed"></div>
-      <h4 class="center bold" style="margin: 0;">MOVIMIENTOS INVENTARIO</h4>
-      <table>
-        <thead>
-          <tr style="border-bottom: 1px solid #000;">
-            <th>ITEM</th>
-            <th class="right">INI</th>
-            <th class="right">VND</th>
-            <th class="right">FIN</th>
-          </tr>
-        </thead>
-        <tbody>
-          ${inventoryMovements.map(m => `
+          ${s.inventory.map((m: any) => `
             <tr>
-              <td>${m.name.toUpperCase().substring(0,15)}</td>
-              <td class="right">${m.start}</td>
-              <td class="right">${m.salesCount}</td>
-              <td class="right">${m.final}</td>
+              <td style="text-align:left;">${m.name.substring(0,14)}</td>
+              <td style="text-align:right;">${m.start}</td>
+              <td style="text-align:right;">${m.sales}</td>
+              <td style="text-align:right;">${m.final}</td>
             </tr>
           `).join('')}
-        </tbody>
-      </table>
-
-      <div class="dashed"></div>
-      <div class="center bold" style="font-size: 11pt;">
-        VENTAS TURNO: $${formatNum(totalGross)}
+        </table>
+        <div style="border-top:1px dashed #000; margin:3mm 0;"></div>
+        <p style="font-size:11pt; font-weight:bold;">VENTAS TURNO: $${formatNum(s.totalGross)}</p>
+        <p style="margin-top:10mm; font-size:8pt;">--- FIN DEL REPORTE ---</p>
       </div>
     `;
   };
 
-  const handlePrintZReport = () => {
+  const handlePrintZ = () => {
     const printWindow = window.open('', '_blank', 'width=600,height=800');
     if (!printWindow) return;
-    printWindow.document.write(`<html><head><style>@page { size: 80mm auto; margin: 0; } body { font-family: Courier; padding: 4mm; width: 72mm; } .center { text-align: center; } .right { text-align: right; } .bold { font-weight: bold; } .dashed { border-top: 1px dashed #000; margin: 3mm 0; } table { width: 100%; border-collapse: collapse; } th, td { padding: 1mm 0; font-size: 9pt; }</style></head><body>${getReportZHTML()}</body></html>`);
+    printWindow.document.write(`<html><body style="margin:0; padding:10mm;">${getZReportHTML()}</body></html>`);
     printWindow.document.close();
     printWindow.focus();
     setTimeout(() => { printWindow.print(); printWindow.close(); }, 500);
   };
 
-  const handleResetToStart = () => {
-    setShowZReport(false);
-    setLastClosedShift(null);
-    setActualCounts({});
-    setStartCash({ CUP: '' });
-    // Al ser logout, StoreContext ya nos mandará a PIN Lock
-  };
-
-  if (!activeShift && !showZReport) {
+  // RENDER: APERTURA
+  if (step === 'IDLE') {
     return (
-      <div className="h-full flex flex-col items-center justify-center bg-slate-900 p-4 animate-in fade-in">
-        <div className="bg-white p-8 md:p-12 rounded-[3rem] shadow-2xl max-w-lg w-full">
-          <div className="text-center mb-8">
-            <div className="w-20 h-20 bg-brand-50 rounded-3xl flex items-center justify-center mx-auto mb-6 text-brand-600"><Unlock size={32} /></div>
-            <h1 className="text-2xl font-black text-slate-900 uppercase">Apertura de Caja</h1>
-            <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-1">Inicie su turno, {currentUser?.name}</p>
+      <div className="h-full flex items-center justify-center bg-slate-900 p-4 animate-in fade-in">
+        <div className="bg-white p-12 rounded-[4rem] shadow-2xl max-w-lg w-full text-center">
+          <div className="w-20 h-20 bg-brand-50 rounded-3xl flex items-center justify-center mx-auto mb-8 text-brand-600 shadow-inner">
+            <Unlock size={40} />
           </div>
-          <div className="space-y-6">
-            <div className="bg-slate-100 p-6 rounded-2xl border-2 border-transparent focus-within:border-brand-500 transition-all">
-               <span className="font-black text-slate-400 text-[10px] tracking-widest uppercase">Fondo Inicial (CUP)</span>
-               <input 
-                type="number" 
-                className="w-full bg-transparent font-black text-3xl text-slate-800 outline-none mt-2" 
-                placeholder="0.00" 
-                value={startCash.CUP} 
-                onChange={e => setStartCash({CUP: e.target.value})} 
-                autoFocus 
-               />
-            </div>
-            <button onClick={handleOpenShift} className="w-full bg-slate-900 text-white font-black py-5 rounded-2xl shadow-xl hover:bg-brand-600 transition-all uppercase tracking-widest text-xs">
-               Iniciar Turno
-            </button>
+          <h2 className="text-3xl font-black text-slate-800 uppercase tracking-tighter mb-2">Apertura de Caja</h2>
+          <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mb-10">Inicie su jornada, {currentUser?.name}</p>
+          
+          <div className="bg-slate-100 p-8 rounded-3xl mb-8 border-2 border-transparent focus-within:border-brand-500 transition-all">
+             <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Fondo Inicial CUP</label>
+             <input 
+              type="number" 
+              autoFocus
+              className="w-full bg-transparent text-center text-4xl font-black text-slate-800 outline-none" 
+              placeholder="0.00" 
+              value={startCashCUP}
+              onChange={e => setStartCashCUP(e.target.value)}
+             />
           </div>
+
+          <button onClick={handleOpenShift} className="w-full bg-slate-900 text-white font-black py-6 rounded-2xl shadow-xl hover:bg-brand-600 transition-all uppercase tracking-widest text-xs">
+            Abrir Turno
+          </button>
+          {onOpen && <button onClick={onOpen} className="mt-4 text-slate-300 font-black uppercase text-[10px] tracking-widest">Volver</button>}
         </div>
       </div>
     );
   }
 
-  if (activeShift && !showZReport) {
-    // Check if we already have the valid user for closing
+  // RENDER: PIN DE CIERRE
+  if (step === 'PIN') {
+    return (step === 'PIN' && (
+      <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-xl z-[200] flex items-center justify-center p-4">
+        <div className="bg-white p-12 rounded-[3.5rem] shadow-2xl max-sm w-full text-center border border-gray-100 animate-in zoom-in">
+          <div className="bg-red-50 w-20 h-20 rounded-3xl flex items-center justify-center mx-auto mb-8 text-red-500 shadow-inner"><Key size={40}/></div>
+          <h2 className="text-2xl font-black text-slate-800 uppercase tracking-tighter mb-2">Autorizar Cierre</h2>
+          <p className="text-[9px] text-slate-400 font-bold uppercase mb-10 tracking-widest">Introduzca su PIN para realizar el arqueo</p>
+          <input 
+            type="password" 
+            autoFocus 
+            className="w-full bg-gray-50 border-none p-6 rounded-3xl text-center text-5xl mb-10 font-black outline-none focus:ring-4 focus:ring-brand-500/20" 
+            value={pinInput} 
+            onChange={e => setPinInput(e.target.value)} 
+            maxLength={4} 
+            onKeyDown={e => e.key === 'Enter' && handleVerifyPIN()} 
+          />
+          <div className="flex gap-4">
+            <button onClick={handleVerifyPIN} className="flex-1 bg-slate-900 text-white font-black py-5 rounded-2xl uppercase text-[10px] tracking-[0.2em] shadow-xl">Validar</button>
+            <button onClick={() => onOpen?.()} className="flex-1 bg-gray-100 text-slate-400 font-black py-5 rounded-2xl uppercase text-[10px] tracking-[0.2em]">Cancelar</button>
+          </div>
+        </div>
+      </div>
+    ));
+  }
+
+  // RENDER: ARQUEO (CIEGO VS TRANSPARENTE)
+  if (step === 'ARQUEO') {
+    const isBlind = authUserInfo?.role === Role.DEPENDENT;
     return (
-      <div className="p-4 md:p-8 bg-gray-50 h-full overflow-y-auto animate-in fade-in">
-        <div className="max-w-4xl mx-auto space-y-6">
-          <div className="bg-white p-6 md:p-10 rounded-[2.5rem] shadow-sm border border-gray-100 flex flex-col md:flex-row justify-between items-center gap-4">
-             <div className="flex items-center gap-5">
-                <div className="bg-emerald-50 text-emerald-600 p-4 rounded-3xl"><Unlock size={32} /></div>
-                <div>
-                   <h1 className="text-2xl font-black text-slate-800 uppercase">Turno Activo</h1>
-                   <p className="text-[10px] text-slate-400 font-bold uppercase">Abierto por {activeShift.openedBy} • {new Date(activeShift.openedAt).toLocaleTimeString()}</p>
-                </div>
-             </div>
-             <button onClick={() => setShowPinModal(true)} className="bg-red-500 text-white px-8 py-3 rounded-xl font-black text-[10px] uppercase shadow-lg hover:bg-red-600 transition-all flex items-center gap-2"><ArrowUp size={16}/> Finalizar Turno</button>
+      <div className="fixed inset-0 bg-slate-900/90 backdrop-blur-md z-[210] flex items-center justify-center p-0 md:p-4 animate-in fade-in">
+        <div className="bg-white rounded-none md:rounded-[4rem] w-full max-w-2xl h-full md:h-auto overflow-hidden flex flex-col shadow-2xl animate-in zoom-in">
+          <div className="p-8 bg-slate-900 text-white flex justify-between items-center shrink-0">
+            <div>
+              <h2 className="text-2xl font-black uppercase tracking-tighter">Arqueo Final Z</h2>
+              <p className="text-[10px] text-brand-400 font-bold uppercase tracking-widest mt-1">Conteo físico obligatorio</p>
+            </div>
+            <button onClick={() => setStep('PIN')} className="p-3 bg-white/10 rounded-2xl"><X size={20}/></button>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-             <div className="bg-white p-8 rounded-[2.5rem] shadow-sm border border-gray-100">
-                <h3 className="text-[10px] font-black uppercase text-slate-400 mb-6 tracking-widest flex items-center gap-2"><DollarSign size={14}/> Fondo Actual</h3>
-                <div className="space-y-3">
-                   {Object.entries(shiftMetrics || {}).map(([key, expected]: [string, any]) => (
-                     <div key={key} className="flex justify-between items-center p-4 bg-gray-50 rounded-2xl border border-gray-100">
-                        <span className="font-black text-slate-400 text-[9px] uppercase">{key.replace('_',' ')}</span>
-                        <span className="font-black text-lg text-slate-800">${formatNum(expected as number)}</span>
-                     </div>
-                   ))}
-                </div>
-             </div>
-             <div className="bg-white p-8 rounded-[2.5rem] shadow-sm border border-gray-100">
-                <h3 className="text-[10px] font-black uppercase text-slate-400 mb-6 tracking-widest flex items-center gap-2"><Package size={14}/> Movimiento de Inventario</h3>
-                <div className="space-y-2 max-h-[300px] overflow-y-auto">
-                    {inventoryMovements.map((m, i) => (
-                        <div key={i} className="flex justify-between items-center p-3 bg-gray-50 rounded-xl">
-                            <span className="text-[10px] font-bold text-slate-600 truncate flex-1 pr-2">{m.name}</span>
-                            <div className="flex gap-4 text-center">
-                                <div className="w-10">
-                                    <p className="text-[8px] uppercase text-gray-400">INI</p>
-                                    <p className="text-xs font-black">{m.start}</p>
-                                </div>
-                                <div className="w-10">
-                                    <p className="text-[8px] uppercase text-gray-400">VND</p>
-                                    <p className="text-xs font-black text-brand-600">{m.salesCount}</p>
-                                </div>
+          <div className="flex-1 overflow-y-auto p-8 space-y-6">
+             {Object.entries(expectedMetrics).map(([key, expected]) => {
+                 const actual = parseFloat(actualCounts[key] || '0');
+                 const diff = actual - expected;
+                 return (
+                   <div key={key} className="bg-gray-50 p-6 rounded-[2.5rem] border border-gray-100 flex flex-col gap-4">
+                      <div className="flex justify-between items-center">
+                        <span className="font-black text-slate-400 text-[10px] uppercase tracking-widest">{key.replace('_',' ')}</span>
+                        {!isBlind && <span className="font-bold text-xs text-brand-600">Sistema: ${formatNum(expected)}</span>}
+                      </div>
+                      <div className="flex gap-4 items-center">
+                        <input 
+                          type="number" 
+                          className="flex-1 bg-white border-2 border-gray-200 p-5 rounded-2xl font-black text-2xl text-right outline-none focus:border-brand-500" 
+                          placeholder="0.00" 
+                          value={actualCounts[key] || ''} 
+                          onChange={e => setActualCounts({...actualCounts, [key]: e.target.value})} 
+                        />
+                        {!isBlind && (
+                            <div className={`w-32 text-right flex flex-col ${Math.abs(diff) < 0.01 ? 'text-emerald-500' : 'text-red-500'}`}>
+                               <span className="text-[8px] font-black uppercase tracking-widest">Diferencia</span>
+                               <span className="font-black text-sm">${formatNum(diff)}</span>
                             </div>
-                        </div>
-                    ))}
-                </div>
-             </div>
+                        )}
+                      </div>
+                   </div>
+                 );
+             })}
+          </div>
+
+          <div className="p-8 bg-white border-t border-gray-100">
+             <button onClick={handleConfirmClosure} className="w-full bg-slate-900 text-white font-black py-6 rounded-3xl shadow-xl uppercase tracking-[0.2em] text-xs hover:bg-brand-600 transition-all">
+                Cerrar Turno y Generar Reporte Z
+             </button>
           </div>
         </div>
-
-        {/* MODAL PIN PARA CERRAR */}
-        {showPinModal && (
-          <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-xl flex items-center justify-center z-[200] p-4">
-            <div className="bg-white p-10 rounded-[3rem] shadow-2xl max-sm w-full text-center">
-              <div className="bg-brand-50 w-20 h-20 rounded-3xl flex items-center justify-center mx-auto mb-6 text-brand-600 shadow-inner"><Key size={32}/></div>
-              <h2 className="text-xl font-black text-slate-800 uppercase">Validar Cierre</h2>
-              <p className="text-[9px] text-slate-400 font-bold uppercase mb-8">Introduzca PIN de Operador o Admin</p>
-              <input type="password" autoFocus className="w-full bg-gray-100 border-none p-5 rounded-2xl text-center text-4xl mb-6 font-black outline-none" value={superiorPin} onChange={e => setSuperiorPin(e.target.value)} maxLength={4} onKeyDown={e => e.key === 'Enter' && handleVerifySuperior()} />
-              <div className="flex gap-2">
-                <button onClick={handleVerifySuperior} className="flex-1 bg-slate-900 text-white font-black py-4 rounded-xl uppercase text-[10px] tracking-widest shadow-xl">Confirmar</button>
-                <button onClick={() => setShowPinModal(false)} className="flex-1 bg-gray-100 text-slate-400 font-black py-4 rounded-xl uppercase text-[10px] tracking-widest">Cancelar</button>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* MODAL CONTEO REAL (MODO CIEGO VS CON ESPERADO) */}
-        {showClosureModal && (
-          <div className="fixed inset-0 bg-slate-950/70 backdrop-blur-md flex items-center justify-center z-[210] p-4">
-            <div className="bg-white rounded-[3rem] w-full max-w-2xl shadow-2xl animate-in zoom-in overflow-hidden flex flex-col max-h-[90vh]">
-              <div className="p-8 bg-slate-900 text-white flex justify-between items-center shrink-0">
-                <div>
-                  <h2 className="text-xl font-black uppercase tracking-tighter">Arqueo de Turno</h2>
-                  <p className="text-[10px] text-brand-400 font-bold uppercase tracking-widest">Conteo físico de valores</p>
-                </div>
-                <button onClick={() => setShowClosureModal(false)} className="p-3 bg-white/10 rounded-2xl"><X size={20}/></button>
-              </div>
-              <div className="flex-1 overflow-y-auto p-8 space-y-6">
-                 {Object.entries(shiftMetrics || {}).map(([key, expected]: [string, any]) => {
-                     const isDependent = currentUser?.role === Role.DEPENDENT;
-                     const actual = parseFloat(actualCounts[key] || '0');
-                     const diff = actual - (expected as number);
-                     
-                     return (
-                       <div key={key} className="bg-gray-50 p-6 rounded-[2rem] border border-gray-100 flex flex-col gap-4">
-                          <div className="flex justify-between items-center">
-                            <span className="font-black text-slate-400 text-[10px] uppercase tracking-widest">{key.replace('_',' ')}</span>
-                            {!isDependent && <span className="font-bold text-xs text-brand-600">Sistema: ${formatNum(expected as number)}</span>}
-                          </div>
-                          <div className="flex gap-4 items-center">
-                            <input 
-                                type="number" 
-                                className="flex-1 bg-white border-2 border-gray-200 p-5 rounded-2xl font-black text-xl text-right outline-none focus:border-brand-500" 
-                                placeholder="0.00" 
-                                value={actualCounts[key] || ''} 
-                                onChange={e => setActualCounts({...actualCounts, [key]: e.target.value})} 
-                            />
-                            {!isDependent && (
-                                <div className={`w-24 text-right flex flex-col ${Math.abs(diff) < 0.01 ? 'text-emerald-500' : 'text-red-500'}`}>
-                                   <span className="text-[8px] font-black uppercase">Diferencia</span>
-                                   <span className="font-black text-xs">${formatNum(diff)}</span>
-                                </div>
-                            )}
-                          </div>
-                       </div>
-                     );
-                 })}
-              </div>
-              <div className="p-8 bg-white border-t border-gray-100 shrink-0">
-                <button onClick={() => handleProcessFinalClosure(currentUser?.name || 'Sistema')} className="w-full bg-slate-900 text-white font-black py-6 rounded-3xl shadow-xl uppercase tracking-widest text-xs hover:bg-brand-600 transition-all">
-                  Cerrar y Firmar Turno
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
       </div>
     );
   }
 
-  if (showZReport) {
+  // RENDER: REPORTE Z
+  if (step === 'Z_REPORT') {
     return (
-      <div className="p-4 md:p-8 bg-slate-950 h-full flex flex-col items-center overflow-y-auto animate-in slide-in-from-bottom duration-700">
-          <div className="bg-emerald-500 text-white p-10 rounded-[3rem] w-full max-w-sm mb-10 text-center shadow-2xl">
+      <div className="h-full bg-slate-950 flex flex-col items-center justify-center p-6 animate-in slide-in-from-bottom duration-700 overflow-y-auto">
+          <div className="bg-emerald-500 text-white p-10 rounded-[3rem] w-full max-w-sm mb-10 text-center shadow-2xl shadow-emerald-500/20">
              <CheckCircle size={64} className="mx-auto mb-4" />
-             <h2 className="text-2xl font-black uppercase">Turno Finalizado</h2>
-             <p className="text-[10px] font-bold uppercase opacity-80 mt-1">Reporte Z generado con éxito</p>
+             <h2 className="text-2xl font-black uppercase tracking-tighter">Turno Finalizado</h2>
+             <p className="text-[10px] font-bold uppercase opacity-80 mt-1">Contabilidad cerrada con éxito</p>
           </div>
 
-          <div className="bg-white max-w-[350px] w-full p-8 shadow-2xl rounded-sm font-mono text-xs relative mb-10 overflow-hidden">
-              <div id="printable-z-report-area">
-                 {/* Reutilización del reporte visual */}
-                 <div dangerouslySetInnerHTML={{ __html: getReportZHTML() }} />
-              </div>
+          <div className="bg-white max-w-[350px] w-full p-8 shadow-2xl rounded-sm mb-10 overflow-hidden animate-in fade-in duration-1000 delay-300">
+              <div dangerouslySetInnerHTML={{ __html: getZReportHTML() }} />
           </div>
           
           <div className="flex flex-col md:flex-row gap-4 w-full max-w-[350px]">
-              <button onClick={handlePrintZReport} className="flex-1 bg-white text-slate-900 py-4 rounded-2xl font-black uppercase text-[10px] tracking-widest shadow-xl flex items-center justify-center gap-2"><Printer size={16}/> Imprimir</button>
-              <button onClick={handleResetToStart} className="flex-1 bg-brand-500 text-white py-4 rounded-2xl font-black uppercase text-[10px] tracking-widest shadow-xl">Nuevo Ciclo</button>
+              <button onClick={handlePrintZ} className="flex-1 bg-white text-slate-900 py-4 rounded-2xl font-black uppercase text-[10px] tracking-widest shadow-xl flex items-center justify-center gap-2 hover:bg-gray-100 transition-all"><Printer size={16}/> Imprimir Z</button>
+              <button onClick={() => window.location.reload()} className="flex-1 bg-brand-500 text-white py-4 rounded-2xl font-black uppercase text-[10px] tracking-widest shadow-xl hover:bg-brand-600 transition-all">Nueva Jornada</button>
           </div>
       </div>
     );

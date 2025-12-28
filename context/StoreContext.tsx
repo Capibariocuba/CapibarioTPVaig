@@ -301,6 +301,12 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     return users.find(u => u.pin === hashed) || null;
   };
 
+  const logout = useCallback(() => {
+    setCurrentUser(null);
+    setView(View.POS);
+    localStorage.removeItem('currentUser');
+  }, []);
+
   const updateUserPin = useCallback(async (userId: string, newPin: string) => {
     if (!userId || newPin.length !== 4) return;
     
@@ -420,7 +426,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       deleteUser: (id) => setUsers(prev => prev.filter(u => u.id !== id)),
       login,
       validatePin,
-      logout: () => { setCurrentUser(null); setView(View.POS); },
+      logout,
       checkModuleAccess: (mid) => PermissionEngine.validateModuleAccess(mid as View, getCurrentTier(), businessConfig.security),
       isLicenseValid: businessConfig.licenseStatus === 'ACTIVE',
       applyLicenseKey: async (key: string) => {
@@ -469,9 +475,11 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         });
       },
       closeShift: (cash: Record<string, number>, closedBy: string) => {
-        setActiveShift(prev => prev ? { ...prev, closedAt: new Date().toISOString(), actualCash: cash, closedBy } : null);
-        // Prompt 2: El TPV vuelve a pantalla de 'terminal bloqueada'
-        setCurrentUser(null);
+        // Cierre definitivo del turno
+        setActiveShift(null);
+        localStorage.removeItem('activeShift');
+        // Bloqueo total de terminal
+        logout();
       },
       addCurrency: (c) => setCurrencies(prev => [...prev, c]),
       updateCurrency: (c) => setCurrencies(prev => prev.map(curr => curr.code === c.code ? c : curr)),
