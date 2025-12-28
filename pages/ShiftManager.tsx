@@ -1,4 +1,3 @@
-
 import React, { useState, useMemo, useEffect } from 'react';
 import { useStore } from '../context/StoreContext';
 import { Currency, View, Role, Product, Sale, Shift, User } from '../types';
@@ -165,7 +164,8 @@ export const ShiftManager: React.FC<{ onOpen?: () => void }> = ({ onOpen }) => {
     let hasMismatch = false;
     Object.keys(expectedMetrics).forEach(key => {
       const actual = parseFloat(actualCounts[key] || '0');
-      const expected = expectedMetrics[key];
+      // Fix: cast expectedMetrics[key] to number to avoid "unknown" potential in comparisons
+      const expected = expectedMetrics[key] as number;
       if (Math.abs(actual - expected) > 0.01) hasMismatch = true;
       finalCounts[key] = actual;
     });
@@ -252,7 +252,7 @@ export const ShiftManager: React.FC<{ onOpen?: () => void }> = ({ onOpen }) => {
           ${Object.entries(s.actual).map(([k, v]) => `
             <tr>
               <td style="padding: 1mm 0;">${k.replace('CASH_', 'EFECTIVO ').replace('_', ' ')}</td>
-              ${isAdmin ? `<td style="text-align: right;">$${formatNum(s.metrics[k] || 0)}</td>` : ''}
+              ${isAdmin ? `<td style="text-align: right;">$${formatNum((s.metrics[k] as number) || 0)}</td>` : ''}
               <td style="text-align: right; font-weight: bold;">$${formatNum(v as number)}</td>
             </tr>
           `).join('')}
@@ -298,7 +298,7 @@ export const ShiftManager: React.FC<{ onOpen?: () => void }> = ({ onOpen }) => {
 
         <div style="border-bottom: 1px dashed #000; margin: 3mm 0;"></div>
         <div style="text-align: center; font-weight: bold; font-size: 11pt;">
-          VENTAS TURNO: $${formatNum(s.totalGross)}
+          VENTAS TURNO: $${formatNum(s.totalGross as number)}
         </div>
         <p style="text-align: center; font-size: 8pt; margin-top: 5mm; opacity: 0.6;">--- FIN DEL REPORTE ---</p>
       </div>

@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useMemo } from 'react';
 import { useStore } from '../context/StoreContext';
 import { 
@@ -247,10 +246,23 @@ export const POS: React.FC = () => {
       <div class="dashed"></div>
       <div style="font-size: 10pt;"><div style="display:flex; justify-content: space-between;"><span>SUBTOTAL:</span><span>${symbol}${formatNum(ticket.subtotal)}</span></div>${ticket.discount > 0 ? `<div style="display:flex; justify-content: space-between;"><span>DESC.:</span><span>-${symbol}${formatNum(ticket.discount)}</span></div>` : ''}<div style="display:flex; justify-content: space-between;" class="bold"><span>TOTAL (${ticket.currency}):</span><span>${symbol}${formatNum(ticket.total)}</span></div></div>
       <div class="dashed"></div>
-      <div style="font-size: 9pt;"><p class="bold" style="margin-bottom: 1mm;">DETALLE DE PAGO:</p>${ticket.payments.map(p => `<div style="display:flex; justify-content: space-between;"><span>${p.method.toUpperCase()} (${p.currency}):</span><span class="bold">${currencies.find(c => c.code === p.currency)?.symbol || '$'}${formatNum(p.amount)}</span></div>`).join('')}${changeCUP > 0.009 ? `<div style="display:flex; justify-content: space-between; margin-top: 2mm;" class="bold"><span>CAMBIO (CUP):</span><span>₱${formatNum(changeCUP)}</span></div>` : ''}</div>
+      <div style="font-size: 9pt;"><p class="bold" style="margin-bottom: 1mm;">DETALLE DE PAGO:</p>
+        ${ticket.payments.map(p => {
+          let line = `<div style="display:flex; justify-content: space-between;"><span>${p.method === 'CREDIT' ? 'CRÉDITO CLIENTE' : p.method.toUpperCase()} (${p.currency}):</span><span class="bold">${currencies.find(c => c.code === p.currency)?.symbol || '$'}${formatNum(p.amount)}</span></div>`;
+          if (p.method === 'CREDIT' && ticket.clientRemainingCredit !== undefined) {
+             line += `<div style="display:flex; justify-content: space-between; font-size: 8pt; color: #444;"><span>CRÉDITO RESTANTE:</span><span>₱${formatNum(ticket.clientRemainingCredit)}</span></div>`;
+          }
+          return line;
+        }).join('')}
+        ${changeCUP > 0.009 ? `<div style="display:flex; justify-content: space-between; margin-top: 2mm;" class="bold"><span>CAMBIO (CUP):</span><span>₱${formatNum(changeCUP)}</span></div>` : ''}
+      </div>
       ${(ticket as Sale).refunds?.length ? `<div class="dashed"></div><div class="center bold" style="color:red;">REEMBOLSO APLICADO</div>` : ''}
       <div class="dashed"></div>
-      <div class="center" style="font-size: 8pt; margin-top: 4mm;"><p class="bold">${businessConfig.footerMessage.toUpperCase()}</p><p style="margin-top: 2mm; opacity: 0.5;">CAPIBARIO TPV CLOUD</p></div>
+      <div class="center" style="font-size: 8pt; margin-top: 4mm;">
+        <p class="bold">${businessConfig.footerMessage.toUpperCase()}</p>
+        <p style="margin-top: 2mm; opacity: 0.5; margin-bottom: 0;">CAPIBARIO TPV</p>
+        <p style="opacity: 0.5; margin: 0;">www.capibario.com</p>
+      </div>
     `;
   };
 
@@ -300,11 +312,13 @@ export const POS: React.FC = () => {
     if (!selectedOrder) return;
     const itemsToRefund: RefundItem[] = [];
     Object.entries(refundQtys).forEach(([cartId, qty]) => {
-        if (qty > 0) {
-            const item = selectedOrder.items.find(si => si.cartId === cartId);
+        // Fix: Explicitly cast qty to number to handle "unknown" potentials in some TS environments
+        const q = qty as number;
+        if (q > 0) {
+            const item = (selectedOrder.items as any[]).find(si => si.cartId === cartId);
             if (item) {
                 const unitPriceCUP = item.finalPrice;
-                itemsToRefund.push({ cartId, qty, amountCUP: unitPriceCUP * qty });
+                itemsToRefund.push({ cartId, qty: q, amountCUP: unitPriceCUP * q });
             }
         }
     });
@@ -409,6 +423,36 @@ export const POS: React.FC = () => {
                         )}
                     </div>
 
+                    {/* SECCIÓN CUPÓN */}
+                    <div className="px-6 py-4 bg-white border-t border-gray-100">
+                        {appliedCoupon ? (
+                            <div className="flex items-center justify-between bg-emerald-50 p-4 rounded-2xl border border-emerald-100 animate-in zoom-in">
+                                <div className="flex items-center gap-3">
+                                    <div className="bg-emerald-500 text-white p-2 rounded-lg"><Tag size={14}/></div>
+                                    <div>
+                                        <p className="text-[8px] font-black text-emerald-600 uppercase">Cupón Aplicado</p>
+                                        <p className="text-[10px] font-bold text-emerald-700">{appliedCoupon.code}</p>
+                                    </div>
+                                </div>
+                                <button onClick={removeCoupon} className="text-emerald-400 hover:text-red-500"><X size={18}/></button>
+                            </div>
+                        ) : (
+                            <div className="flex gap-2">
+                                <div className="relative flex-1">
+                                    <Tag className="absolute left-3 top-3 text-slate-300" size={14} />
+                                    <input 
+                                        className="w-full bg-gray-50 border-none p-2.5 pl-9 rounded-xl font-bold text-[10px] outline-none focus:ring-2 focus:ring-brand-500/20 uppercase" 
+                                        placeholder="CÓDIGO DE CUPÓN..." 
+                                        value={couponCodeInput}
+                                        onChange={e => setCouponCodeInput(e.target.value)}
+                                        onKeyDown={e => e.key === 'Enter' && handleApplyCoupon()}
+                                    />
+                                </div>
+                                <button onClick={handleApplyCoupon} className="bg-slate-900 text-white px-4 rounded-xl font-black text-[9px] uppercase tracking-widest hover:bg-brand-600 transition-all">Aplicar</button>
+                            </div>
+                        )}
+                    </div>
+
                     <div className="p-6 bg-white border-t border-gray-100 space-y-4">
                         <div className="space-y-2 border-b border-gray-100 pb-4">
                             <div className="flex justify-between text-[10px] font-black text-slate-400 uppercase tracking-widest"><span>Subtotal</span><span>{currencies.find(c => c.code === posCurrency)?.symbol}{cartSubtotal.toFixed(2)}</span></div>
@@ -471,7 +515,7 @@ export const POS: React.FC = () => {
                             <table className="w-full text-left">
                                 <thead className="bg-gray-50 border-b text-[8px] font-black uppercase text-slate-400 tracking-widest"><tr className="p-4"><th className="p-4">Producto</th><th className="p-4 text-center">Cant</th><th className="p-4 text-right">Monto</th></tr></thead>
                                 <tbody className="divide-y divide-gray-50">
-                                    {selectedOrder.items.map(item => (
+                                    {(selectedOrder.items as any[]).map(item => (
                                         <tr key={item.cartId} className="text-[10px] font-bold text-slate-600">
                                             <td className="p-4 uppercase">{item.name}</td>
                                             <td className="p-4 text-center">{item.quantity}</td>
@@ -519,7 +563,7 @@ export const POS: React.FC = () => {
                     </div>
                     <div className="flex-1 overflow-y-auto p-8 space-y-6 custom-scrollbar">
                         <div className="space-y-4">
-                            {selectedOrder.items.map(item => {
+                            {(selectedOrder.items as any[]).map(item => {
                                 const alreadyRefunded = selectedOrder.refunds?.reduce((acc, r) => acc + (r.items.find(ri => ri.cartId === item.cartId)?.qty || 0), 0) || 0;
                                 const maxAvailable = item.quantity - alreadyRefunded;
                                 if (maxAvailable <= 0) return null;
