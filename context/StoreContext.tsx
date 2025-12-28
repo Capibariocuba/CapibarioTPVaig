@@ -97,7 +97,13 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }));
   });
 
-  const [coupons, setCoupons] = useState<Coupon[]>(() => JSON.parse(localStorage.getItem('coupons') || '[]'));
+  const [coupons, setCoupons] = useState<Coupon[]>(() => {
+    const saved = JSON.parse(localStorage.getItem('coupons') || '[]');
+    return saved.map((c: any) => ({
+      ...c,
+      currentUsages: Number(c.currentUsages || 0)
+    }));
+  });
   const [bogoOffers, setBogoOffers] = useState<BogoOffer[]>(() => JSON.parse(localStorage.getItem('bogoOffers') || '[]'));
   const [offers, setOffers] = useState<Offer[]>(() => JSON.parse(localStorage.getItem('offers') || '[]'));
   
@@ -164,6 +170,15 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     const { items, total, payments, currency, note, appliedCouponId, couponDiscount, bogoDiscount, bogoAppsCount } = saleData;
     const activeTerminal = businessConfig.posTerminals?.find(t => t.id === activePosTerminalId);
     const warehouseId = activeTerminal?.warehouseId || 'wh-default';
+
+    // Validación extra de cupón si existe
+    if (appliedCouponId) {
+      const coupon = coupons.find(c => c.id === appliedCouponId);
+      if (coupon && coupon.usageLimit > 0 && coupon.currentUsages >= coupon.usageLimit) {
+        notify("El cupón ha alcanzado su límite de usos", "error");
+        return null;
+      }
+    }
 
     for (const item of items) {
       const product = products.find(p => p.id === item.id);
@@ -262,6 +277,13 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }
     setLedger(prev => [...prev, ...newLedgerEntries]);
 
+    // INCREMENTAR USO DE CUPÓN
+    if (appliedCouponId) {
+      setCoupons(prev => prev.map(c => 
+        c.id === appliedCouponId ? { ...c, currentUsages: (c.currentUsages || 0) + 1 } : c
+      ));
+    }
+
     const finalTicket: Ticket = {
       id: txId,
       items,
@@ -298,7 +320,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     notify("Venta procesada con éxito", "success");
     setSelectedClientId(null);
     return finalTicket;
-  }, [products, businessConfig, activePosTerminalId, activeShift, currentUser, convertCurrency, notify, selectedClientId, currencies, clients]);
+  }, [products, businessConfig, activePosTerminalId, activeShift, currentUser, convertCurrency, notify, selectedClientId, currencies, clients, coupons]);
 
   const processRefund = useCallback((saleId: string, refundItems: RefundItem[], authUser: User, source: 'CASHBOX' | 'OUTSIDE_CASHBOX'): boolean => {
     const sale = sales.find(s => s.id === saleId);
