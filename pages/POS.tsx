@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useMemo } from 'react';
 import { useStore } from '../context/StoreContext';
 import { 
@@ -396,6 +397,8 @@ export const POS: React.FC = () => {
 
   if (!activeShift || showShiftManager) return <div className="h-full"><ShiftManager onOpen={() => setShowShiftManager(false)} /></div>;
 
+  const totalItemsCount = cart.reduce((acc, item) => acc + item.quantity, 0);
+
   return (
     <div className="flex h-screen bg-gray-100 overflow-hidden relative font-sans animate-in fade-in duration-500">
         
@@ -431,7 +434,8 @@ export const POS: React.FC = () => {
                 </button>
             </div>
 
-            <div className="bg-white px-3 md:px-4 pb-3 md:pb-4 border-b border-gray-100 flex gap-2 overflow-x-auto scrollbar-hide shrink-0">
+            {/* Ajuste UI Refinement A: Spacing Desktop */}
+            <div className="bg-white px-3 md:px-4 py-3 md:py-4 border-b border-gray-100 flex gap-2 overflow-x-auto scrollbar-hide shrink-0">
                 {['Todo', ...categories.map(c => c.name)].map(cat => (
                     <button 
                         key={cat} 
@@ -443,7 +447,7 @@ export const POS: React.FC = () => {
                 ))}
             </div>
 
-            <div className="flex-1 overflow-y-auto p-2 md:p-4 custom-scrollbar">
+            <div className="flex-1 overflow-y-auto p-2 md:p-4 custom-scrollbar pb-24 lg:pb-4">
                 <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-7 gap-1.5 md:gap-3">
                     {filteredProducts.map(p => {
                         const effectivePrice = convertValue(p.price);
@@ -464,24 +468,24 @@ export const POS: React.FC = () => {
                                 <div className="aspect-square bg-gray-50 rounded-lg md:rounded-2xl mb-1.5 md:mb-3 overflow-hidden relative">
                                     {p.image ? <img src={p.image} className="w-full h-full object-cover" /> : <Package className="w-full h-full p-2 md:p-4 text-slate-200" />}
                                     
-                                    {/* Globitos de Variantes en Card */}
+                                    {/* Globitos de Variantes: Refinement C (Legibilidad) */}
                                     {p.variants?.length > 0 && (
-                                        <div className="absolute inset-0 bg-black/5 flex flex-wrap content-start p-1 gap-1">
+                                        <div className="absolute inset-0 bg-black/5 flex flex-wrap content-start p-1 gap-1.5">
                                             {p.variants.map(v => (
-                                                <div key={v.id} className="bg-white/90 backdrop-blur-sm px-1.5 py-0.5 rounded-full text-[6px] font-black uppercase text-slate-800 shadow-sm border border-slate-200">
-                                                    {v.name.slice(0,3)}:{v.stock}
+                                                <div key={v.id} className="bg-white/90 backdrop-blur-sm px-2.5 py-1 rounded-full text-xs font-black uppercase text-slate-800 shadow-sm border border-slate-200 leading-none">
+                                                    {v.name.slice(0,4)}: {v.stock}
                                                 </div>
                                             ))}
                                         </div>
                                     )}
 
-                                    <div className="absolute bottom-1 right-1 bg-slate-900/80 backdrop-blur-md px-1.5 py-0.5 rounded-full text-[6px] md:text-[8px] font-black text-white">{displayStock} U</div>
+                                    <div className="absolute bottom-1 right-1 bg-slate-900/80 backdrop-blur-md px-2 py-1 rounded-full text-[10px] md:text-xs font-black text-white">{displayStock} U</div>
                                 </div>
-                                <h3 className="text-[7px] md:text-[9px] font-black text-slate-800 uppercase line-clamp-1 md:line-clamp-2 leading-tight mb-1 md:mb-2 flex-1 tracking-tighter">{p.name}</h3>
+                                <h3 className="text-[10px] md:text-xs font-black text-slate-800 uppercase line-clamp-1 md:line-clamp-2 leading-tight mb-1 md:mb-2 flex-1 tracking-tighter">{p.name}</h3>
                                 <div className="flex justify-between items-center">
-                                    <span className="font-black text-[9px] md:text-xs text-brand-600 truncate">{currencies.find(c => c.code === posCurrency)?.symbol}{effectivePrice.toFixed(2)}</span>
-                                    <div className="bg-gray-100 p-1 rounded-md text-slate-400 group-hover:bg-brand-500 group-hover:text-white transition-colors">
-                                        {p.variants?.length > 0 ? <Layers size={10}/> : <Plus size={10}/>}
+                                    <span className="font-black text-xs md:text-sm text-brand-600 truncate">{currencies.find(c => c.code === posCurrency)?.symbol}{effectivePrice.toFixed(2)}</span>
+                                    <div className="bg-gray-100 p-1.5 rounded-md text-slate-400 group-hover:bg-brand-500 group-hover:text-white transition-colors">
+                                        {p.variants?.length > 0 ? <Layers size={14}/> : <Plus size={14}/>}
                                     </div>
                                 </div>
                             </button>
@@ -491,9 +495,30 @@ export const POS: React.FC = () => {
             </div>
         </div>
 
+        {/* Ajuste UI Refinement B: Ticket Bar en Móvil */}
+        {cart.length > 0 && !isTicketOpen && (
+          <button 
+            onClick={() => setIsTicketOpen(true)}
+            className="fixed bottom-6 left-6 right-6 lg:hidden bg-slate-900 text-white p-5 rounded-[2rem] shadow-2xl flex items-center justify-between z-[90] animate-in slide-in-from-bottom active:scale-95 transition-all"
+          >
+            <div className="flex items-center gap-4">
+              <div className="bg-brand-500 text-white w-10 h-10 rounded-2xl flex items-center justify-center font-black">
+                {totalItemsCount}
+              </div>
+              <div className="text-left">
+                <p className="text-[10px] font-black uppercase text-slate-400 tracking-widest">Mi Carrito</p>
+                <p className="text-lg font-black tracking-tighter">Total: {currencies.find(c => c.code === posCurrency)?.symbol}{cartTotal.toFixed(2)}</p>
+              </div>
+            </div>
+            <div className="bg-white/10 p-3 rounded-2xl">
+              <ChevronRight size={20} />
+            </div>
+          </button>
+        )}
+
         {/* --- COLUMNA DERECHA: TICKET --- */}
         <div className={`
-            fixed lg:relative inset-y-0 right-0 w-full lg:w-[420px] bg-white shadow-2xl flex flex-col z-[80] transition-transform duration-500
+            fixed lg:relative inset-y-0 right-0 w-full lg:w-[420px] bg-white shadow-2xl flex flex-col z-[100] transition-transform duration-500
             ${isTicketOpen ? 'translate-x-0' : 'translate-x-full lg:translate-x-0'}
         `}>
             <div className="p-6 bg-slate-900 text-white flex justify-between items-center shrink-0">

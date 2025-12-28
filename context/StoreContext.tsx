@@ -452,8 +452,27 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       },
       processSale,
       posCurrency, setPosCurrency, activeShift, 
-      openShift: (cash: Record<string, number>) => setActiveShift({ id: generateUniqueId(), openedAt: new Date().toISOString(), openedBy: currentUser?.name || 'Sistema', startCash: cash }),
-      closeShift: (cash: Record<string, number>, closedBy: string) => setActiveShift(prev => prev ? { ...prev, closedAt: new Date().toISOString(), actualCash: cash, closedBy } : null),
+      openShift: (cash: Record<string, number>) => {
+        const snapshot: Record<string, number> = {};
+        products.forEach(p => {
+          snapshot[p.id] = (p.stock || 0);
+          p.variants.forEach(v => {
+            snapshot[`${p.id}-${v.id}`] = (v.stock || 0);
+          });
+        });
+        setActiveShift({ 
+          id: generateUniqueId(), 
+          openedAt: new Date().toISOString(), 
+          openedBy: currentUser?.name || 'Sistema', 
+          startCash: cash,
+          initialStock: snapshot
+        });
+      },
+      closeShift: (cash: Record<string, number>, closedBy: string) => {
+        setActiveShift(prev => prev ? { ...prev, closedAt: new Date().toISOString(), actualCash: cash, closedBy } : null);
+        // Prompt 2: El TPV vuelve a pantalla de 'terminal bloqueada'
+        setCurrentUser(null);
+      },
       addCurrency: (c) => setCurrencies(prev => [...prev, c]),
       updateCurrency: (c) => setCurrencies(prev => prev.map(curr => curr.code === c.code ? c : curr)),
       deleteCurrency: (code) => setCurrencies(prev => prev.filter(c => c.code !== code)),

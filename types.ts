@@ -328,6 +328,7 @@ export interface Shift {
   closedAt?: string;
   closedBy?: string;
   actualCash?: Record<string, number>; // Monto contado físicamente al cierre
+  initialStock?: Record<string, number>; // Snapshot de stock al abrir
 }
 
 export interface StoreContextType {
