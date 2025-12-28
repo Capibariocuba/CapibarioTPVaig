@@ -5,7 +5,8 @@ export enum View {
   INVENTORY = 'INVENTORY',
   CLIENTS = 'CLIENTS',
   CONFIGURATION = 'CONFIGURATION',
-  LEDGER = 'LEDGER'
+  LEDGER = 'LEDGER',
+  EMPLOYEES = 'EMPLOYEES'
 }
 
 export enum Currency {
@@ -352,6 +353,49 @@ export interface Shift {
   initialStock?: Record<string, number>; // Snapshot de stock al abrir
 }
 
+// --- NUEVOS TIPOS MÓDULO EMPLEADOS ---
+
+export enum SalaryType {
+  FIXED = 'FIXED',
+  PERCENT = 'PERCENT',
+  BOTH = 'BOTH'
+}
+
+export enum PayFrequency {
+  DAILY = 'DAILY',
+  WEEKLY = 'WEEKLY',
+  BIWEEKLY = 'BIWEEKLY',
+  MONTHLY = 'MONTHLY'
+}
+
+export interface EmployeePaymentEvent {
+  id: string;
+  timestamp: string;
+  amount: number;
+  currency: string;
+  note?: string;
+}
+
+export interface Employee {
+  id: string;
+  userId: string; // Enlace al sistema User actual para autenticación TPV
+  name: string;
+  photo?: string;
+  ci?: string;
+  phone?: string;
+  email?: string;
+  hireDate: string;
+  terminationDate?: string;
+  role: Role;
+  salaryType: SalaryType;
+  salaryFixedAmount?: number;
+  salaryPercent?: number;
+  payFrequency: PayFrequency;
+  paymentHistory: EmployeePaymentEvent[];
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface StoreContextType {
   view: View;
   setView: (view: View) => void;
@@ -433,4 +477,11 @@ export interface StoreContextType {
   notify: (message: string, type?: 'error' | 'success') => void;
   activePosTerminalId: string | null;
   setActivePosTerminalId: (id: string | null) => void;
+  
+  // EMPLEADOS CRUD
+  employees: Employee[];
+  addEmployee: (employee: Employee, rawPin: string) => Promise<void>;
+  updateEmployee: (employee: Employee, rawPin?: string) => Promise<void>;
+  deleteEmployee: (id: string) => void;
+  addEmployeePayment: (employeeId: string, payment: EmployeePaymentEvent) => void;
 }

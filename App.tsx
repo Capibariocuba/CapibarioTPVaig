@@ -8,6 +8,7 @@ import { Inventory } from './pages/Inventory';
 import { Clients } from './pages/Clients';
 import { Configuration } from './pages/Configuration';
 import { Ledger } from './pages/Ledger';
+import { Employees } from './pages/Employees';
 import { View } from './types';
 import { Key, Cpu, Globe, MessageCircle, AlertCircle, Menu } from 'lucide-react';
 import { CAPIBARIO_LOGO } from './constants';
@@ -107,7 +108,6 @@ const ActivationScreen: React.FC = () => {
 const MainLayout: React.FC = () => {
   const { view, setView, isLicenseValid, users } = useStore();
   
-  // Estado de Sidebar
   const [sidebarPinned, setSidebarPinned] = useState(() => localStorage.getItem('_sidebar_pinned') === 'true');
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
@@ -115,7 +115,6 @@ const MainLayout: React.FC = () => {
     localStorage.setItem('_sidebar_pinned', String(sidebarPinned));
   }, [sidebarPinned]);
 
-  // Boot Flow Logic: Si no hay operadores, forzar vista de configuración
   useEffect(() => {
     if (isLicenseValid && users.length === 0 && view !== View.CONFIGURATION) {
       setView(View.CONFIGURATION);
@@ -132,6 +131,7 @@ const MainLayout: React.FC = () => {
       case View.CLIENTS: return <Clients />;
       case View.CONFIGURATION: return <Configuration />;
       case View.LEDGER: return <Ledger />;
+      case View.EMPLOYEES: return <Employees />;
       default: return <div>404</div>;
     }
   };
@@ -146,7 +146,6 @@ const MainLayout: React.FC = () => {
       />
       
       <main className="flex-1 h-full overflow-hidden relative">
-        {/* Hamburger Flotante (Solo visible si colapsado y no pinned) */}
         {!sidebarPinned && !sidebarOpen && (
           <button 
             onClick={() => setSidebarOpen(true)}

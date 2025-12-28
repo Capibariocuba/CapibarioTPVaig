@@ -1,6 +1,6 @@
 
 import React from 'react';
-import { LayoutDashboard, Package, Settings, LogOut, Store, Users, FileText, Lock, Pin, PinOff, Menu, X } from 'lucide-react';
+import { LayoutDashboard, Package, Settings, LogOut, Store, Users, FileText, Lock, Pin, PinOff, UserCheck } from 'lucide-react';
 import { useStore } from '../context/StoreContext';
 import { View, Role } from '../types';
 import { CAPIBARIO_LOGO } from '../constants';
@@ -18,6 +18,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ isPinned, isOpen, onTogglePin,
   const menuItems = [
     { id: View.POS, label: 'TPV (Venta)', icon: Store, roles: [Role.ADMIN, Role.ACCOUNTANT, Role.DEPENDENT] },
     { id: View.CLIENTS, label: 'Clientes y Marketing', icon: Users, roles: [Role.ADMIN, Role.ACCOUNTANT, Role.DEPENDENT] },
+    { id: View.EMPLOYEES, label: 'Empleados', icon: UserCheck, roles: [Role.ADMIN, Role.ACCOUNTANT] },
     { id: View.LEDGER, label: 'Auditoría', icon: FileText, roles: [Role.ADMIN, Role.ACCOUNTANT] },
     { id: View.DASHBOARD, label: 'Estadísticas', icon: LayoutDashboard, roles: [Role.ADMIN, Role.ACCOUNTANT] },
     { id: View.INVENTORY, label: 'Inventario', icon: Package, roles: [Role.ADMIN, Role.ACCOUNTANT] },

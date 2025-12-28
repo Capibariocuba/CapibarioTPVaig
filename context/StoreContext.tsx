@@ -2,7 +2,8 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { 
   StoreContextType, View, CurrencyConfig, LedgerEntry, User, 
-  BusinessConfig, Coupon, BogoOffer, Offer, Role, Product, Client, ClientGroup, Ticket, Sale, Warehouse, LicenseTier, POSStoreTerminal, Category, PaymentDetail, PurchaseHistoryItem, Shift, Refund, RefundItem
+  BusinessConfig, Coupon, BogoOffer, Offer, Role, Product, Client, ClientGroup, Ticket, Sale, Warehouse, LicenseTier, POSStoreTerminal, Category, PaymentDetail, PurchaseHistoryItem, Shift, Refund, RefundItem,
+  Employee, EmployeePaymentEvent, SalaryType, PayFrequency
 } from '../types';
 import { MOCK_USERS, DEFAULT_BUSINESS_CONFIG, CATEGORIES as DEFAULT_CATEGORIES } from '../constants';
 import { PermissionEngine } from '../security/PermissionEngine';
@@ -121,6 +122,12 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     return saved || businessConfig.posTerminals?.[0]?.id || null;
   });
 
+  // --- EMPLEADOS STATE ---
+  const [employees, setEmployees] = useState<Employee[]>(() => {
+    const saved = localStorage.getItem('employees');
+    return saved ? JSON.parse(saved) : [];
+  });
+
   const notify = useCallback((message: string, type: 'error' | 'success' = 'error') => {
     setNotification({ message, type });
     setTimeout(() => setNotification(null), 4000);
@@ -144,8 +151,9 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     localStorage.setItem('bogoOffers', JSON.stringify(bogoOffers));
     localStorage.setItem('offers', JSON.stringify(offers));
     localStorage.setItem('activeShift', JSON.stringify(activeShift));
+    localStorage.setItem('employees', JSON.stringify(employees));
     if (activePosTerminalId) localStorage.setItem('activePosTerminalId', activePosTerminalId);
-  }, [currentUser, users, businessConfig, currencies, warehouses, categories, products, sales, ledger, clients, clientGroups, coupons, bogoOffers, offers, activeShift, activePosTerminalId]);
+  }, [currentUser, users, businessConfig, currencies, warehouses, categories, products, sales, ledger, clients, clientGroups, coupons, bogoOffers, offers, activeShift, activePosTerminalId, employees]);
 
   const convertCurrency = useCallback((amount: number, from: string, to: string) => {
     const fromRate = currencies.find(c => c.code === from)?.rate || 1;
@@ -171,7 +179,6 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     const activeTerminal = businessConfig.posTerminals?.find(t => t.id === activePosTerminalId);
     const warehouseId = activeTerminal?.warehouseId || 'wh-default';
 
-    // Validación extra de cupón si existe
     if (appliedCouponId) {
       const coupon = coupons.find(c => c.id === appliedCouponId);
       if (coupon && coupon.usageLimit > 0 && coupon.currentUsages >= coupon.usageLimit) {
@@ -277,7 +284,6 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }
     setLedger(prev => [...prev, ...newLedgerEntries]);
 
-    // INCREMENTAR USO DE CUPÓN
     if (appliedCouponId) {
       setCoupons(prev => prev.map(c => 
         c.id === appliedCouponId ? { ...c, currentUsages: (c.currentUsages || 0) + 1 } : c
@@ -330,7 +336,6 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     const timestamp = new Date().toISOString();
     const refundId = generateUniqueId();
 
-    // A. VALIDACIÓN DE DISPONIBILIDAD DE CAJA
     if (source === 'CASHBOX') {
         const cashAvailable = getCurrentCash().CUP;
         if (cashAvailable < totalRefundCUP - 0.009) {
@@ -339,7 +344,6 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         }
     }
 
-    // 1. Reversión de Stock
     const updatedProducts = products.map(p => {
       const itemsToRefund = refundItems.filter(ri => ri.cartId.startsWith(p.id));
       if (itemsToRefund.length === 0) return p;
@@ -370,7 +374,6 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       return newP;
     });
 
-    // 2. Salida Contable (Solo si es en caja)
     if (source === 'CASHBOX') {
         const newLedgerEntry: LedgerEntry = {
           id: generateUniqueId(),
@@ -388,7 +391,6 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         setLedger(prev => [...prev, newLedgerEntry]);
     }
 
-    // Actualizar estados
     setProducts(updatedProducts);
     
     const newRefund: Refund = {
@@ -441,62 +443,123 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     notify("PIN actualizado correctamente", "success");
   }, [users, notify]);
 
-  const addClientCredit = useCallback((clientId: string, amount: number, reason: string = "Recarga de crédito") => {
-    setClients(prev => prev.map(c => c.id === clientId ? { ...c, creditBalance: (c.creditBalance || 0) + amount, balance: (c.creditBalance || 0) + amount, updatedAt: new Date().toISOString() } : c));
-    notify(`Crédito añadido: +$${amount.toFixed(2)}`, 'success');
+  // --- CRUD CLIENTES & CRÉDITO ---
+  const addClientCredit = useCallback((clientId: string, amount: number, reason?: string) => {
+    setClients(prev => prev.map(c => c.id === clientId ? { 
+      ...c, 
+      creditBalance: (c.creditBalance || 0) + amount,
+      balance: (c.creditBalance || 0) + amount,
+      updatedAt: new Date().toISOString() 
+    } : c));
+    notify("Crédito añadido", "success");
   }, [notify]);
 
-  const deductClientCredit = useCallback((clientId: string, amount: number, reason: string = "Deducción de crédito") => {
-    const client = clients.find(c => c.id === clientId);
-    if (!client || (client.creditBalance || 0) < amount) {
-      notify('Saldo de crédito insuficiente', 'error');
-      return false;
-    }
-    setClients(prev => prev.map(c => c.id === clientId ? { ...c, creditBalance: (c.creditBalance || 0) - amount, balance: (c.creditBalance || 0) - amount, updatedAt: new Date().toISOString() } : c));
-    notify(`Crédito deducido: -$${amount.toFixed(2)}`, 'success');
-    return true;
-  }, [clients, notify]);
+  const deductClientCredit = useCallback((clientId: string, amount: number, reason?: string) => {
+    let possible = false;
+    setClients(prev => prev.map(c => {
+      if (c.id === clientId) {
+        if ((c.creditBalance || 0) >= amount) {
+          possible = true;
+          return { 
+            ...c, 
+            creditBalance: (c.creditBalance || 0) - amount,
+            balance: (c.creditBalance || 0) - amount,
+            updatedAt: new Date().toISOString() 
+          };
+        }
+      }
+      return c;
+    }));
+    if (!possible) notify("Saldo insuficiente", "error");
+    else notify("Crédito deducido", "success");
+    return possible;
+  }, [notify]);
 
   const addClientGroup = useCallback((name: string) => {
-    const trimmedName = name.trim();
-    if (!trimmedName) return;
-    if (clientGroups.some(g => g.name.toLowerCase() === trimmedName.toLowerCase())) {
-      notify("Ya existe un grupo con ese nombre.", "error");
-      return;
-    }
-    const newGroup: ClientGroup = {
-      id: generateUniqueId(),
-      name: trimmedName,
-      color: '#64748b',
-      createdAt: new Date().toISOString()
-    };
-    setClientGroups(prev => [...prev, newGroup]);
-    notify("Grupo creado con éxito.", "success");
-  }, [clientGroups, notify]);
+    setClientGroups(prev => [...prev, { id: generateUniqueId(), name, color: '#64748b', createdAt: new Date().toISOString() }]);
+    notify("Grupo creado", "success");
+  }, [notify]);
 
   const updateClientGroup = useCallback((id: string, name: string) => {
-    const trimmedName = name.trim();
-    if (!trimmedName || id === 'GENERAL') return;
-    if (clientGroups.some(g => g.id !== id && g.name.toLowerCase() === trimmedName.toLowerCase())) {
-      notify("Ya existe otro grupo con ese nombre.", "error");
-      return;
-    }
-    setClientGroups(prev => prev.map(g => g.id === id ? { ...g, name: trimmedName } : g));
-    notify("Grupo actualizado.", "success");
-  }, [clientGroups, notify]);
+    setClientGroups(prev => prev.map(g => g.id === id ? { ...g, name } : g));
+    notify("Grupo actualizado", "success");
+  }, [notify]);
 
   const deleteClientGroup = useCallback((id: string) => {
-    if (id === 'GENERAL') {
-      notify("El grupo 'General' no puede ser eliminado.", "error");
-      return;
-    }
-    if (clients.some(c => c.groupId === id)) {
-      notify("No se puede eliminar: hay clientes en este grupo.", "error");
-      return;
-    }
+    if (id === 'GENERAL') return;
     setClientGroups(prev => prev.filter(g => g.id !== id));
-    notify("Grupo eliminado.", "success");
-  }, [clients, notify]);
+    setClients(prev => prev.map(c => c.groupId === id ? { ...c, groupId: 'GENERAL' } : c));
+    notify("Grupo eliminado", "success");
+  }, [notify]);
+
+  // --- CRUD EMPLEADOS ---
+  const addEmployee = async (employee: Employee, rawPin: string) => {
+    const hashedPin = await hashPin(rawPin);
+    const newUserId = generateUniqueId();
+    
+    // Crear User para TPV
+    const newUser: User = {
+      id: newUserId,
+      name: employee.name,
+      pin: hashedPin,
+      role: employee.role
+    };
+
+    const finalEmployee = { ...employee, userId: newUserId };
+    setEmployees(prev => [...prev, finalEmployee]);
+    setUsers(prev => [...prev, newUser]);
+    notify("Empleado registrado con éxito", "success");
+  };
+
+  const updateEmployee = async (employee: Employee, rawPin?: string) => {
+    let hashedPin = '';
+    if (rawPin) {
+      hashedPin = await hashPin(rawPin);
+    }
+
+    setEmployees(prev => prev.map(e => e.id === employee.id ? { ...employee, updatedAt: new Date().toISOString() } : e));
+    
+    // Sincronizar con el User del TPV
+    setUsers(prev => prev.map(u => {
+      if (u.id === employee.userId) {
+        // Si hay baja laboral, podemos borrarlo de users para que no inicie sesión
+        if (employee.terminationDate) {
+          // Opción 1: Devolver nulo y filtrar luego
+          return u; 
+        }
+        return {
+          ...u,
+          name: employee.name,
+          role: employee.role,
+          pin: rawPin ? hashedPin : u.pin
+        };
+      }
+      return u;
+    }).filter(u => {
+      const emp = employees.find(e => e.userId === u.id);
+      return !emp?.terminationDate;
+    }));
+
+    notify("Ficha actualizada", "success");
+  };
+
+  const deleteEmployee = (id: string) => {
+    const emp = employees.find(e => e.id === id);
+    if (emp) {
+      setUsers(prev => prev.filter(u => u.id !== emp.userId));
+    }
+    setEmployees(prev => prev.filter(e => e.id !== id));
+    notify("Empleado eliminado", "success");
+  };
+
+  const addEmployeePayment = (employeeId: string, payment: EmployeePaymentEvent) => {
+    setEmployees(prev => prev.map(e => e.id === employeeId ? {
+      ...e,
+      paymentHistory: [payment, ...e.paymentHistory],
+      updatedAt: new Date().toISOString()
+    } : e));
+    notify("Pago registrado", "success");
+  };
 
   return (
     <StoreContext.Provider value={{
@@ -628,7 +691,14 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       updateBogoOffer: (o) => setBogoOffers(prev => prev.map(item => item.id === o.id ? o : item)),
       deleteBogoOffer: (id) => setBogoOffers(prev => prev.filter(o => o.id !== id)),
       selectedClientId,
-      setSelectedClientId
+      setSelectedClientId,
+      
+      // EXPOSICIÓN CRUD EMPLEADOS
+      employees,
+      addEmployee,
+      updateEmployee,
+      deleteEmployee,
+      addEmployeePayment
     } as any}>
       {children}
       {notification && (
