@@ -475,11 +475,9 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         });
       },
       closeShift: (cash: Record<string, number>, closedBy: string) => {
-        // Cierre definitivo del turno
         setActiveShift(null);
         localStorage.removeItem('activeShift');
-        // Bloqueo total de terminal
-        logout();
+        // No deslogueamos aquí para que ShiftManager pueda mostrar el reporte final antes de que el usuario cierre sesión manualmente
       },
       addCurrency: (c) => setCurrencies(prev => [...prev, c]),
       updateCurrency: (c) => setCurrencies(prev => prev.map(curr => curr.code === c.code ? c : curr)),

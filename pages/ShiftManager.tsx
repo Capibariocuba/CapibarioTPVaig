@@ -7,7 +7,7 @@ import { Unlock, DollarSign, Printer, AlertTriangle, ArrowUp, X, Key, CheckCircl
 export const ShiftManager: React.FC<{ onOpen?: () => void }> = ({ onOpen }) => {
   const { 
     activeShift, openShift, closeShift, getCurrentCash, currentUser, validatePin, 
-    sales, products, businessConfig, notify 
+    sales, products, businessConfig, notify, logout 
   } = useStore();
   
   // Estados de flujo
@@ -86,7 +86,7 @@ export const ShiftManager: React.FC<{ onOpen?: () => void }> = ({ onOpen }) => {
         results.push({
           name: p.name,
           start: startStock,
-          entries: '—', // Reaprovisionamientos no implementados aún
+          entries: 0, // Reaprovisionamientos no implementados aún
           sales: soldQty,
           final: p.stock
         });
@@ -105,7 +105,7 @@ export const ShiftManager: React.FC<{ onOpen?: () => void }> = ({ onOpen }) => {
           results.push({
             name: `${p.name} (${v.name})`,
             start: startV,
-            entries: '—',
+            entries: 0,
             sales: soldV,
             final: v.stock
           });
@@ -151,56 +151,90 @@ export const ShiftManager: React.FC<{ onOpen?: () => void }> = ({ onOpen }) => {
   const getZReportHTML = () => {
     if (!lastShiftSummary) return '';
     const s = lastShiftSummary;
+    const isAdmin = authUserInfo?.role === Role.ADMIN || authUserInfo?.role === Role.ACCOUNTANT;
+    
     return `
-      <div style="text-align:center; font-family:Courier; font-size:10pt;">
-        <h2 style="margin:0;">${businessConfig.name.toUpperCase()}</h2>
-        <p style="margin:2mm 0;">REPORTE DE CIERRE Z</p>
-        <p>ID: ${s.shift.id.slice(-8)}</p>
-        <div style="border-top:1px dashed #000; margin:3mm 0;"></div>
-        <div style="text-align:left; font-size:8pt;">
-          APERTURA: ${new Date(s.shift.openedAt).toLocaleString()}<br>
-          CIERRE: ${new Date(s.closedAt).toLocaleString()}<br>
-          CAJERO: ${s.shift.openedBy.toUpperCase()}<br>
-          AUDITOR: ${s.closedBy.toUpperCase()}
+      <div style="font-family: 'Courier New', Courier, monospace; width: 72mm; color: #000; font-size: 10pt; line-height: 1.2;">
+        <div style="text-align: center; margin-bottom: 4mm;">
+          <h2 style="margin: 0; font-size: 13pt; font-weight: bold;">${businessConfig.name.toUpperCase()}</h2>
+          <p style="margin: 1mm 0; font-size: 8pt;">${businessConfig.address.substring(0, 35)}</p>
+          <div style="border-bottom: 1px dashed #000; margin: 2mm 0;"></div>
+          <p style="margin: 0; font-weight: bold; font-size: 11pt;">REPORTE DE CIERRE Z</p>
+          <p style="margin: 0;">TURNO: #${s.shift.id.slice(-6)}</p>
         </div>
-        <div style="border-top:1px dashed #000; margin:3mm 0;"></div>
-        <h4 style="margin:0;">ARQUEO DE CAJA</h4>
-        <table style="width:100%; font-size:8pt; border-collapse:collapse;">
-          <tr style="border-bottom:1px solid #000;"><th style="text-align:left;">METODO</th><th style="text-align:right;">REAL</th></tr>
-          ${Object.entries(s.actual).map(([k, v]) => `<tr><td>${k.replace('_',' ')}</td><td style="text-align:right;">$${formatNum(v as number)}</td></tr>`).join('')}
-        </table>
-        <div style="border-top:1px dashed #000; margin:3mm 0;"></div>
-        <h4 style="margin:0;">MOVIMIENTO INVENTARIO</h4>
-        <table style="width:100%; font-size:7pt; border-collapse:collapse; margin-top:2mm;">
-          <tr style="border-bottom:1px solid #000;">
-            <th style="text-align:left;">ITEM</th>
-            <th style="text-align:right;">INI</th>
-            <th style="text-align:right;">VND</th>
-            <th style="text-align:right;">FIN</th>
+
+        <div style="font-size: 8pt; margin-bottom: 3mm;">
+          FECHA APERTURA: ${new Date(s.shift.openedAt).toLocaleString()}<br>
+          FECHA CIERRE: ${new Date(s.closedAt).toLocaleString()}<br>
+          OPERADOR APER.: ${s.shift.openedBy.toUpperCase()}<br>
+          OPERADOR CIER.: ${s.closedBy.toUpperCase()}
+        </div>
+
+        <div style="border-bottom: 1px solid #000; margin-bottom: 2mm;"></div>
+        <p style="font-weight: bold; margin: 0 0 1mm 0;">RESUMEN CONTABLE</p>
+        <table style="width: 100%; font-size: 8pt; border-collapse: collapse;">
+          <tr style="border-bottom: 1px solid #000;">
+            <th style="text-align: left; padding: 1mm 0;">METODO</th>
+            ${isAdmin ? '<th style="text-align: right;">SIS.</th>' : ''}
+            <th style="text-align: right;">REAL</th>
           </tr>
-          ${s.inventory.map((m: any) => `
+          ${Object.entries(s.actual).map(([k, v]) => `
             <tr>
-              <td style="text-align:left;">${m.name.substring(0,14)}</td>
-              <td style="text-align:right;">${m.start}</td>
-              <td style="text-align:right;">${m.sales}</td>
-              <td style="text-align:right;">${m.final}</td>
+              <td style="padding: 1mm 0;">${k.replace('CASH_', 'EFECTIVO ').replace('_', ' ')}</td>
+              ${isAdmin ? `<td style="text-align: right;">$${formatNum(s.metrics[k] || 0)}</td>` : ''}
+              <td style="text-align: right; font-weight: bold;">$${formatNum(v as number)}</td>
             </tr>
           `).join('')}
         </table>
-        <div style="border-top:1px dashed #000; margin:3mm 0;"></div>
-        <p style="font-size:11pt; font-weight:bold;">VENTAS TURNO: $${formatNum(s.totalGross)}</p>
-        <p style="margin-top:10mm; font-size:8pt;">--- FIN DEL REPORTE ---</p>
+
+        <div style="border-bottom: 1px solid #000; margin: 3mm 0 2mm 0;"></div>
+        <p style="font-weight: bold; margin: 0 0 1mm 0;">MOVIMIENTO INVENTARIO</p>
+        <table style="width: 100%; font-size: 7pt; border-collapse: collapse;">
+          <tr style="border-bottom: 1px solid #000;">
+            <th style="text-align: left; padding: 1mm 0;">ITEM</th>
+            <th style="text-align: right;">INI</th>
+            <th style="text-align: right;">VND</th>
+            <th style="text-align: right;">FIN</th>
+          </tr>
+          ${s.inventory.map((m: any) => `
+            <tr>
+              <td style="padding: 1mm 0; white-space: nowrap; overflow: hidden; max-width: 35mm;">${m.name.toUpperCase()}</td>
+              <td style="text-align: right;">${m.start}</td>
+              <td style="text-align: right; font-weight: bold;">${m.sales}</td>
+              <td style="text-align: right;">${m.final}</td>
+            </tr>
+          `).join('')}
+        </table>
+
+        <div style="border-bottom: 1px dashed #000; margin: 3mm 0;"></div>
+        <div style="text-align: center; font-weight: bold; font-size: 11pt;">
+          VENTAS TURNO: $${formatNum(s.totalGross)}
+        </div>
+        <p style="text-align: center; font-size: 8pt; margin-top: 5mm; opacity: 0.6;">--- FIN DEL REPORTE ---</p>
       </div>
     `;
   };
 
   const handlePrintZ = () => {
+    const html = getZReportHTML();
     const printWindow = window.open('', '_blank', 'width=600,height=800');
-    if (!printWindow) return;
-    printWindow.document.write(`<html><body style="margin:0; padding:10mm;">${getZReportHTML()}</body></html>`);
+    if (!printWindow) {
+      notify("Ventana de impresión bloqueada", "error");
+      return;
+    }
+    printWindow.document.write(`<html><head><title>REPORTE Z</title></head><body style="margin:0; padding:4mm;">${html}</body></html>`);
     printWindow.document.close();
     printWindow.focus();
-    setTimeout(() => { printWindow.print(); printWindow.close(); }, 500);
+    setTimeout(() => {
+      printWindow.print();
+      printWindow.close();
+    }, 500);
+  };
+
+  const handleFinalReset = () => {
+    // Bloqueo total de terminal tras ver el reporte
+    logout();
+    window.location.reload();
   };
 
   // RENDER: APERTURA
@@ -237,7 +271,7 @@ export const ShiftManager: React.FC<{ onOpen?: () => void }> = ({ onOpen }) => {
 
   // RENDER: PIN DE CIERRE
   if (step === 'PIN') {
-    return (step === 'PIN' && (
+    return (
       <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-xl z-[200] flex items-center justify-center p-4">
         <div className="bg-white p-12 rounded-[3.5rem] shadow-2xl max-sm w-full text-center border border-gray-100 animate-in zoom-in">
           <div className="bg-red-50 w-20 h-20 rounded-3xl flex items-center justify-center mx-auto mb-8 text-red-500 shadow-inner"><Key size={40}/></div>
@@ -258,7 +292,7 @@ export const ShiftManager: React.FC<{ onOpen?: () => void }> = ({ onOpen }) => {
           </div>
         </div>
       </div>
-    ));
+    );
   }
 
   // RENDER: ARQUEO (CIEGO VS TRANSPARENTE)
@@ -282,7 +316,7 @@ export const ShiftManager: React.FC<{ onOpen?: () => void }> = ({ onOpen }) => {
                  return (
                    <div key={key} className="bg-gray-50 p-6 rounded-[2.5rem] border border-gray-100 flex flex-col gap-4">
                       <div className="flex justify-between items-center">
-                        <span className="font-black text-slate-400 text-[10px] uppercase tracking-widest">{key.replace('_',' ')}</span>
+                        <span className="font-black text-slate-400 text-[10px] uppercase tracking-widest">{key.replace('CASH_','').replace('_',' ')}</span>
                         {!isBlind && <span className="font-bold text-xs text-brand-600">Sistema: ${formatNum(expected)}</span>}
                       </div>
                       <div className="flex gap-4 items-center">
@@ -307,7 +341,7 @@ export const ShiftManager: React.FC<{ onOpen?: () => void }> = ({ onOpen }) => {
 
           <div className="p-8 bg-white border-t border-gray-100">
              <button onClick={handleConfirmClosure} className="w-full bg-slate-900 text-white font-black py-6 rounded-3xl shadow-xl uppercase tracking-[0.2em] text-xs hover:bg-brand-600 transition-all">
-                Cerrar Turno y Generar Reporte Z
+                Finalizar Turno y Firmar Z
              </button>
           </div>
         </div>
@@ -315,23 +349,23 @@ export const ShiftManager: React.FC<{ onOpen?: () => void }> = ({ onOpen }) => {
     );
   }
 
-  // RENDER: REPORTE Z
+  // RENDER: REPORTE Z (PANTALLA FINAL)
   if (step === 'Z_REPORT') {
     return (
-      <div className="h-full bg-slate-950 flex flex-col items-center justify-center p-6 animate-in slide-in-from-bottom duration-700 overflow-y-auto">
-          <div className="bg-emerald-500 text-white p-10 rounded-[3rem] w-full max-w-sm mb-10 text-center shadow-2xl shadow-emerald-500/20">
+      <div className="h-full bg-slate-950 flex flex-col items-center justify-start p-6 animate-in slide-in-from-bottom duration-700 overflow-y-auto pt-16">
+          <div className="bg-emerald-500 text-white p-10 rounded-[3rem] w-full max-w-sm mb-10 text-center shadow-2xl shadow-emerald-500/20 shrink-0">
              <CheckCircle size={64} className="mx-auto mb-4" />
-             <h2 className="text-2xl font-black uppercase tracking-tighter">Turno Finalizado</h2>
-             <p className="text-[10px] font-bold uppercase opacity-80 mt-1">Contabilidad cerrada con éxito</p>
+             <h2 className="text-2xl font-black uppercase tracking-tighter leading-tight">Ciclo Contable<br/>Cerrado</h2>
+             <p className="text-[10px] font-bold uppercase opacity-80 mt-2">Imprima su comprobante Z ahora</p>
           </div>
 
-          <div className="bg-white max-w-[350px] w-full p-8 shadow-2xl rounded-sm mb-10 overflow-hidden animate-in fade-in duration-1000 delay-300">
+          <div className="bg-white max-w-[350px] w-full p-8 shadow-2xl rounded-sm mb-10 animate-in fade-in duration-1000 delay-300">
               <div dangerouslySetInnerHTML={{ __html: getZReportHTML() }} />
           </div>
           
-          <div className="flex flex-col md:flex-row gap-4 w-full max-w-[350px]">
-              <button onClick={handlePrintZ} className="flex-1 bg-white text-slate-900 py-4 rounded-2xl font-black uppercase text-[10px] tracking-widest shadow-xl flex items-center justify-center gap-2 hover:bg-gray-100 transition-all"><Printer size={16}/> Imprimir Z</button>
-              <button onClick={() => window.location.reload()} className="flex-1 bg-brand-500 text-white py-4 rounded-2xl font-black uppercase text-[10px] tracking-widest shadow-xl hover:bg-brand-600 transition-all">Nueva Jornada</button>
+          <div className="flex flex-col md:flex-row gap-4 w-full max-w-[350px] pb-10">
+              <button onClick={handlePrintZ} className="flex-1 bg-white text-slate-900 py-5 rounded-2xl font-black uppercase text-[10px] tracking-widest shadow-xl flex items-center justify-center gap-2 hover:bg-gray-100 transition-all"><Printer size={16}/> Imprimir Reporte</button>
+              <button onClick={handleFinalReset} className="flex-1 bg-brand-500 text-white py-5 rounded-2xl font-black uppercase text-[10px] tracking-widest shadow-xl hover:bg-brand-600 transition-all">Nueva Jornada</button>
           </div>
       </div>
     );
