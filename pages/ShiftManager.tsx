@@ -19,8 +19,9 @@ export const ShiftManager: React.FC<{ onOpen?: () => void }> = ({ onOpen }) => {
   // --- FIX: Defined handleOpenShift to initialize shift with cash values ---
   const handleOpenShift = () => {
     const cash: Record<string, number> = {};
-    Object.entries(startCash).forEach(([k, v]) => {
-      const val = parseFloat(v);
+    // Fix: Explicitly type entries to avoid unknown types (Fixes line 23)
+    Object.entries(startCash).forEach(([k, v]: [string, any]) => {
+      const val = parseFloat(v as string);
       if (!isNaN(val) && val >= 0) cash[k] = val;
     });
     openShift(cash);
@@ -34,7 +35,8 @@ export const ShiftManager: React.FC<{ onOpen?: () => void }> = ({ onOpen }) => {
     const totals: Record<string, number> = {};
     const turnSales = sales.filter(s => s.shiftId === activeShift.id);
     const systemCash = getCurrentCash();
-    Object.entries(systemCash).forEach(([curr, val]) => {
+    // Fix: Explicitly type entries to avoid unknown types from getCurrentCash()
+    Object.entries(systemCash).forEach(([curr, val]: [string, any]) => {
       totals[`CASH_${curr}`] = val as number;
     });
     turnSales.forEach(sale => {
@@ -66,9 +68,10 @@ export const ShiftManager: React.FC<{ onOpen?: () => void }> = ({ onOpen }) => {
 
   const hasDifference = useMemo(() => {
     if (!shiftMetrics) return false;
-    return Object.entries(shiftMetrics).some(([key, expected]) => {
+    // Fix: Explicitly type entries to avoid unknown issues
+    return Object.entries(shiftMetrics).some(([key, expected]: [string, any]) => {
       const actual = parseFloat(actualCounts[key] || '0');
-      return Math.abs(expected - actual) > 0.01;
+      return Math.abs((expected as number) - actual) > 0.01;
     });
   }, [shiftMetrics, actualCounts]);
 
@@ -107,7 +110,8 @@ export const ShiftManager: React.FC<{ onOpen?: () => void }> = ({ onOpen }) => {
   const getReportZHTML = () => {
     if (!lastClosedShift) return '';
     const turnSales = sales.filter(s => s.shiftId === lastClosedShift.id);
-    const totalGross = turnSales.reduce((acc, s) => acc + s.total, 0);
+    // Fix: Explicitly type reduce parameters to avoid arithmetic errors (Fixes line 71)
+    const totalGross = turnSales.reduce((acc: number, s: any) => acc + (s.total as number), 0);
 
     return `
       <div class="center">
@@ -136,9 +140,9 @@ export const ShiftManager: React.FC<{ onOpen?: () => void }> = ({ onOpen }) => {
           </tr>
         </thead>
         <tbody>
-          ${Object.entries(shiftMetrics || {}).map(([key, expected]) => {
+          ${Object.entries(shiftMetrics || {}).map(([key, expected]: [string, any]) => {
             const actual = lastClosedShift.actualCash?.[key] || 0;
-            return `<tr><td>${key.replace('_',' ')}</td><td class="right">$${formatNum(expected)}</td><td class="right" class="bold">$${formatNum(actual)}</td></tr>`;
+            return `<tr><td>${key.replace('_',' ')}</td><td class="right">$${formatNum(expected as number)}</td><td class="right" class="bold">$${formatNum(actual)}</td></tr>`;
           }).join('')}
         </tbody>
       </table>
@@ -154,7 +158,7 @@ export const ShiftManager: React.FC<{ onOpen?: () => void }> = ({ onOpen }) => {
           </tr>
         </thead>
         <tbody>
-          ${inventoryMovements.map(([_, d]) => `<tr><td>${d.name.toUpperCase().substring(0,18)}</td><td class="right">${d.sold}</td><td class="right">${d.stock}</td></tr>`).join('')}
+          ${inventoryMovements.map(([_, d]: [string, any]) => `<tr><td>${d.name.toUpperCase().substring(0,18)}</td><td class="right">${d.sold}</td><td class="right">${d.stock}</td></tr>`).join('')}
         </tbody>
       </table>
 
@@ -173,7 +177,8 @@ export const ShiftManager: React.FC<{ onOpen?: () => void }> = ({ onOpen }) => {
 
   const handleProcessFinalClosure = (authorizedBy: string) => {
     const finalActual: Record<string, number> = {};
-    Object.entries(actualCounts).forEach(([k, v]) => finalActual[k] = parseFloat(v) || 0);
+    // Fix: Explicitly type entries to avoid unknown types (Fixes line 141)
+    Object.entries(actualCounts).forEach(([k, v]: [string, any]) => finalActual[k] = parseFloat(v as string) || 0);
     const closingShift = { ...activeShift!, closedAt: new Date().toISOString(), closedBy: authorizedBy, actualCash: finalActual };
     setLastClosedShift(closingShift);
     closeShift(finalActual, authorizedBy);
@@ -185,7 +190,8 @@ export const ShiftManager: React.FC<{ onOpen?: () => void }> = ({ onOpen }) => {
   const handleVerifySuperior = async () => {
     const user = await validatePin(superiorPin);
     if (user && (user.role === Role.ADMIN || user.role === Role.ACCOUNTANT)) {
-      handleProcessFinalClosure(user.name);
+      // Fix: Cast user.name to string to ensure type safety (Fixes line 176)
+      handleProcessFinalClosure(user.name as string);
       setShowPinModal(false);
       setSuperiorPin('');
     } else {
@@ -247,10 +253,11 @@ export const ShiftManager: React.FC<{ onOpen?: () => void }> = ({ onOpen }) => {
              <div className="bg-white p-8 rounded-[2.5rem] shadow-sm border border-gray-100">
                 <h3 className="text-[10px] font-black uppercase text-slate-400 mb-6 tracking-widest flex items-center gap-2"><DollarSign size={14}/> Estado de Caja Esperado</h3>
                 <div className="space-y-3">
-                   {Object.entries(shiftMetrics || {}).map(([key, expected]) => (
+                   {/* Fix: Explicitly type entries to avoid unknown issues (Fixes line 253) */}
+                   {Object.entries(shiftMetrics || {}).map(([key, expected]: [string, any]) => (
                      <div key={key} className="flex justify-between items-center p-4 bg-gray-50 rounded-2xl border border-gray-100">
                         <span className="font-black text-slate-400 text-[9px] uppercase tracking-tighter">{key.replace('_',' ')}</span>
-                        <span className="font-black text-lg text-slate-800">${formatNum(expected)}</span>
+                        <span className="font-black text-lg text-slate-800">${formatNum(expected as number)}</span>
                      </div>
                    ))}
                 </div>
@@ -274,20 +281,21 @@ export const ShiftManager: React.FC<{ onOpen?: () => void }> = ({ onOpen }) => {
                 <button onClick={() => setShowClosureModal(false)} className="p-3 bg-white/10 rounded-2xl"><X size={20}/></button>
               </div>
               <div className="flex-1 overflow-y-auto p-4 md:p-8 space-y-4">
-                 {Object.entries(shiftMetrics || {}).map(([key, expected]) => {
+                 {/* Fix: Explicitly type entries to avoid unknown issues (Fixes lines 279, 284) */}
+                 {Object.entries(shiftMetrics || {}).map(([key, expected]: [string, any]) => {
                      const actual = parseFloat(actualCounts[key] || '0');
-                     const diff = actual - expected;
+                     const diff = actual - (expected as number);
                      return (
                        <div key={key} className="bg-gray-50 p-4 md:p-6 rounded-[2rem] border border-gray-100 flex flex-col gap-3">
                           <div className="flex justify-between items-center">
                             <span className="font-black text-slate-400 text-[10px] uppercase tracking-tighter">{key.replace('_',' ')}</span>
-                            <span className="font-bold text-xs text-brand-600">Sistema: ${formatNum(expected)}</span>
+                            <span className="font-bold text-xs text-brand-600">Sistema: ${formatNum(expected as number)}</span>
                           </div>
                           <div className="flex gap-3 items-center">
                             <input type="number" className="flex-1 bg-white border-2 border-gray-200 p-4 rounded-2xl font-black text-lg text-right outline-none focus:border-brand-500" placeholder="0.00" value={actualCounts[key] || ''} onChange={e => setActualCounts({...actualCounts, [key]: e.target.value})} />
                             <div className={`w-24 text-right flex flex-col ${Math.abs(diff) < 0.01 ? 'text-emerald-500' : 'text-red-500'}`}>
                                <span className="text-[8px] font-black uppercase">Dif.</span>
-                               <span className="font-black text-xs">${formatNum(diff)}</span>
+                               <span className="font-black text-xs">${formatNum(diff as number)}</span>
                             </div>
                           </div>
                        </div>
@@ -337,25 +345,26 @@ export const ShiftManager: React.FC<{ onOpen?: () => void }> = ({ onOpen }) => {
           <div className="bg-white max-w-[350px] w-full p-8 shadow-2xl rounded-sm font-mono text-sm relative mb-10">
               <div id="printable-z-report-area">
                 <div className="text-center mb-6">
-                    <h2 style={{fontSize:'12pt', margin:0}}>{businessConfig.name.toUpperCase()}</h2>
-                    <p style={{fontSize:'8pt'}}>{businessConfig.address}</p>
+                    <h2 style={{fontSize:'12pt', margin:0}}>${businessConfig.name.toUpperCase()}</h2>
+                    <p style={{fontSize:'8pt'}}>${businessConfig.address}</p>
                     <div style={{borderBottom:'1px dashed #000', margin:'4mm 0'}}></div>
                     <h3 style={{fontSize:'10pt', textDecoration:'underline'}}>REPORTE FINAL Z</h3>
                 </div>
                 <div style={{fontSize:'8pt', lineHeight: 1.4}}>
-                    APERTURA: {new Date(lastClosedShift?.openedAt || '').toLocaleString()}<br/>
-                    CIERRE: {new Date(lastClosedShift?.closedAt || '').toLocaleString()}<br/>
-                    CAJERO: {lastClosedShift?.openedBy.toUpperCase()}<br/>
-                    AUDITOR: {lastClosedShift?.closedBy?.toUpperCase()}
+                    APERTURA: ${new Date(lastClosedShift?.openedAt || '').toLocaleString()}<br/>
+                    CIERRE: ${new Date(lastClosedShift?.closedAt || '').toLocaleString()}<br/>
+                    CAJERO: ${lastClosedShift?.openedBy.toUpperCase()}<br/>
+                    AUDITOR: ${lastClosedShift?.closedBy?.toUpperCase()}
                 </div>
                 <div style={{borderBottom:'1px dashed #000', margin:'4mm 0'}}></div>
                 <table style={{width:'100%', fontSize:'8pt'}}>
                     <thead><tr><th style={{textAlign:'left'}}>ARQUEO</th><th style={{textAlign:'right'}}>SIS</th><th style={{textAlign:'right'}}>REAL</th></tr></thead>
                     <tbody>
-                        {Object.entries(shiftMetrics || {}).map(([key, expected]) => (
+                        {/* Fix: Explicitly type entries */}
+                        {Object.entries(shiftMetrics || {}).map(([key, expected]: [string, any]) => (
                             <tr key={key}>
                                 <td style={{padding:'1mm 0'}}>{key.replace('_',' ')}</td>
-                                <td style={{textAlign:'right'}}>${formatNum(expected)}</td>
+                                <td style={{textAlign:'right'}}>${formatNum(expected as number)}</td>
                                 <td style={{textAlign:'right', fontWeight:'bold'}}>${formatNum(lastClosedShift?.actualCash?.[key] || 0)}</td>
                             </tr>
                         ))}
@@ -363,7 +372,8 @@ export const ShiftManager: React.FC<{ onOpen?: () => void }> = ({ onOpen }) => {
                 </table>
                 <div style={{borderBottom:'1px dashed #000', margin:'4mm 0'}}></div>
                 <div style={{textAlign:'center', padding:'4mm 0'}}>
-                    <p style={{fontSize:'11pt', fontWeight:'bold', margin:0}}>TOTAL: ${formatNum(sales.filter(s => s.shiftId === lastClosedShift?.id).reduce((acc, s) => acc + s.total, 0))}</p>
+                    {/* Fix: Explicitly type reduce parameters to avoid arithmetic and conversion errors (Fixes line 358) */}
+                    <p style={{fontSize:'11pt', fontWeight:'bold', margin:0}}>TOTAL: ${formatNum(sales.filter(s => s.shiftId === lastClosedShift?.id).reduce((acc: number, s: any) => acc + (s.total as number), 0))}</p>
                 </div>
               </div>
           </div>

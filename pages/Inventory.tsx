@@ -1,11 +1,11 @@
-
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { useStore } from '../context/StoreContext';
 import { Warehouse, Product, ProductVariant, PricingRule, AuditLog, LicenseTier, Category } from '../types';
 import { 
   Plus, MapPin, Lock, X, AlertTriangle, Edit3, Save, Package, Tag, Layers, Search, 
   Camera, Barcode, Trash2, History, ChevronRight, Calculator, Calendar, Info, ShieldAlert,
-  ArrowRight, DollarSign, List, Sparkles, Zap, Crown, ChevronDown, ChevronUp, Check, EyeOff, Eye, Square, CheckSquare
+  ArrowRight, DollarSign, List, Sparkles, Zap, Crown, ChevronDown, ChevronUp, Check, EyeOff, Eye, Square, CheckSquare,
+  Truck, ArrowUpRight
 } from 'lucide-react';
 
 const COLORS = ['#0ea5e9', '#ef4444', '#10b981', '#f59e0b', '#6366f1', '#ec4899', '#64748b', '#000000'];
@@ -50,6 +50,11 @@ export const Inventory: React.FC = () => {
   const [showScannerStub, setShowScannerStub] = useState(false);
   const [scannerValue, setScannerValue] = useState('');
   
+  // --- LÓGICA DE ENTRADA DE STOCK (NUEVO) ---
+  const [isStockEntryModalOpen, setIsStockEntryModalOpen] = useState(false);
+  const [stockEntryTarget, setStockEntryTarget] = useState<'PARENT' | string | null>(null);
+  const [stockEntryData, setStockEntryData] = useState({ qty: 1, unitCost: 0, supplier: '', note: '' });
+
   // Borrador de Regla de Precio (Flujo 2 pasos)
   const [ruleDraft, setRuleDraft] = useState<PricingRule | null>(null);
 
@@ -135,6 +140,80 @@ export const Inventory: React.FC = () => {
       };
       reader.readAsDataURL(file);
     }
+  };
+
+  // --- HANDLER DE ENTRADA DE STOCK (NUEVO) ---
+  const handleOpenStockEntry = (target: 'PARENT' | string, currentCost: number) => {
+    setStockEntryTarget(target);
+    setStockEntryData({ qty: 1, unitCost: currentCost, supplier: '', note: '' });
+    setIsStockEntryModalOpen(true);
+  };
+
+  const handleConfirmStockEntry = () => {
+    const { qty, unitCost, supplier, note } = stockEntryData;
+    if (qty <= 0 || unitCost <= 0) {
+      notify("Cantidad y costo deben ser mayores a 0", "error");
+      return;
+    }
+
+    const actorName = currentUser?.name || 'Sistema';
+    const timestamp = new Date().toISOString();
+
+    setEditingProduct(prev => {
+        if (!prev) return null;
+        
+        let updatedStock = prev.stock;
+        let updatedVariants = prev.variants || [];
+        let entityType: 'PRODUCT' | 'VARIANT' = 'PRODUCT';
+        let entityId = prev.id;
+        let targetLabel = 'Producto Base';
+
+        if (stockEntryTarget === 'PARENT') {
+            updatedStock += qty;
+        } else {
+            const vIndex = updatedVariants.findIndex(v => v.id === stockEntryTarget);
+            if (vIndex !== -1) {
+                entityType = 'VARIANT';
+                entityId = updatedVariants[vIndex].id;
+                targetLabel = `Variante: ${updatedVariants[vIndex].name}`;
+                const newV = { ...updatedVariants[vIndex], stock: (updatedVariants[vIndex].stock || 0) + qty };
+                updatedVariants = [...updatedVariants];
+                updatedVariants[vIndex] = newV;
+            }
+        }
+
+        const logEntry: AuditLog = {
+            id: generateUniqueId(),
+            timestamp,
+            type: 'STOCK_ADJUST',
+            userName: actorName,
+            details: `Entrada de stock (${targetLabel}): +${qty} uds @ $${unitCost.toFixed(2)}. Prov: ${supplier || 'N/A'}. Nota: ${note || 'N/A'}`,
+            entityType,
+            entityId,
+            details_raw: {
+                after: {
+                    target: stockEntryTarget === 'PARENT' ? 'PRODUCT' : 'VARIANT',
+                    targetId: entityId,
+                    parentProductId: prev.id,
+                    qty,
+                    unitCost,
+                    supplier: supplier || null,
+                    note: note || null,
+                    warehouseId: prev.warehouseId
+                }
+            }
+        };
+
+        return {
+            ...prev,
+            stock: updatedStock,
+            variants: updatedVariants,
+            history: [logEntry, ...(prev.history || [])]
+        };
+    });
+
+    setIsStockEntryModalOpen(false);
+    notify("Entrada registrada. Pulse 'Consolidar' para finalizar.", "success");
   };
 
   const handleSaveProduct = () => {
@@ -678,7 +757,23 @@ export const Inventory: React.FC = () => {
                                     <div className="p-4 bg-white/10 rounded-2xl text-brand-400 shadow-inner"><Calculator size={28}/></div>
                                 </div>
 
-                                <div className="md:col-span-2 space-y-1"><label className="text-[10px] font-black text-gray-400 uppercase ml-4">Stock en Almacén Activo *</label><div className="relative"><Package className="absolute left-6 top-6 text-gray-300" size={28}/><input type="number" className="w-full bg-gray-100 border-none p-7 pl-20 rounded-[2.5rem] font-black text-3xl text-slate-800 outline-none" value={editingProduct.stock} onChange={e => setEditingProduct(prev => prev ? ({...prev, stock: parseInt(e.target.value) || 0}) : null)} /></div></div>
+                                <div className="md:col-span-2 space-y-1">
+                                    <label className="text-[10px] font-black text-gray-400 uppercase ml-4">Stock en Almacén Activo *</label>
+                                    <div className="flex gap-3 items-center">
+                                        <div className="relative flex-1">
+                                            <Package className="absolute left-6 top-6 text-gray-300" size={28}/>
+                                            <input type="number" className="w-full bg-gray-100 border-none p-7 pl-20 rounded-[2.5rem] font-black text-3xl text-slate-800 outline-none" value={editingProduct.stock} onChange={e => setEditingProduct(prev => prev ? ({...prev, stock: parseInt(e.target.value) || 0}) : null)} />
+                                        </div>
+                                        <button 
+                                            onClick={() => handleOpenStockEntry('PARENT', editingProduct.cost)} 
+                                            className="bg-brand-500 text-white p-6 rounded-[2rem] shadow-lg hover:bg-brand-600 transition-all flex flex-col items-center justify-center gap-1"
+                                            title="Entrada Formal de Stock"
+                                        >
+                                            <ArrowUpRight size={24} />
+                                            <span className="text-[8px] font-black uppercase">Entrada</span>
+                                        </button>
+                                    </div>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -700,7 +795,7 @@ export const Inventory: React.FC = () => {
                                   {v.image ? <img src={v.image} className="w-full h-full object-cover" /> : <div className="w-full h-full" style={{ backgroundColor: v.color || '#eee' }}></div>}
                                   <label className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"><Camera size={18} className="text-white"/><input type="file" className="hidden" onChange={e => handleImageUpload(e, v.id)}/></label>
                                 </div>
-                                <div className="grid grid-cols-1 md:grid-cols-5 gap-3 flex-1 w-full">
+                                <div className="grid grid-cols-1 md:grid-cols-6 gap-3 flex-1 w-full">
                                   <div className="flex flex-col gap-1">
                                     <label className="text-[8px] font-black text-slate-400 uppercase px-1">Nombre</label>
                                     <input className="bg-gray-50 p-3 rounded-xl font-bold text-xs uppercase" placeholder="Nombre" value={v.name} onChange={e => setEditingProduct(prev => prev ? ({...prev, variants: prev.variants.map((vr, idx) => idx === i ? {...vr, name: e.target.value} : vr)}) : null)} />
@@ -719,10 +814,21 @@ export const Inventory: React.FC = () => {
                                   </div>
                                   <div className="flex flex-col gap-1">
                                     <label className="text-[8px] font-black text-slate-400 uppercase px-1">Stock</label>
-                                    <div className="flex gap-2">
-                                      <input type="number" className="flex-1 bg-slate-900 p-3 rounded-xl font-black text-xs text-white" value={v.stock} onChange={e => setEditingProduct(prev => prev ? ({...prev, variants: prev.variants.map((vr, idx) => idx === i ? {...vr, stock: parseInt(e.target.value) || 0} : vr)}) : null)} />
-                                      <button onClick={() => { if(confirm('¿Eliminar variante?')) setEditingProduct(prev => prev ? ({...prev, variants: prev.variants.filter((_, idx) => idx !== i)}) : null); }} className="p-3 text-red-400 bg-red-50 rounded-xl hover:bg-red-500 hover:text-white transition-all"><Trash2 size={18}/></button>
+                                    <div className="flex gap-1">
+                                      <input type="number" className="flex-1 min-w-0 bg-slate-900 p-3 rounded-xl font-black text-xs text-white" value={v.stock} onChange={e => setEditingProduct(prev => prev ? ({...prev, variants: prev.variants.map((vr, idx) => idx === i ? {...vr, stock: parseInt(e.target.value) || 0} : vr)}) : null)} />
+                                      <button 
+                                        onClick={() => handleOpenStockEntry(v.id, v.cost)} 
+                                        className="bg-brand-500 text-white p-2.5 rounded-xl hover:bg-brand-600 transition-all"
+                                        title="Entrada Formal de Stock"
+                                      >
+                                        <ArrowUpRight size={14} />
+                                      </button>
                                     </div>
+                                  </div>
+                                  <div className="flex items-end pb-1">
+                                      <button onClick={() => { if(confirm('¿Eliminar variante?')) setEditingProduct(prev => prev ? ({...prev, variants: prev.variants.filter((_, idx) => idx !== i)}) : null); }} className="w-full p-3 text-red-400 bg-red-50 rounded-xl hover:bg-red-500 hover:text-white transition-all flex items-center justify-center gap-2 text-[8px] font-black uppercase">
+                                          <Trash2 size={16}/> Borrar
+                                      </button>
                                   </div>
                                 </div>
                               </div>
@@ -830,7 +936,9 @@ export const Inventory: React.FC = () => {
                         <h3 className="text-xl font-black text-slate-800 uppercase mb-6 tracking-tighter">Historial de Auditoría</h3>
                         {editingProduct.history?.map(log => (
                             <div key={log.id} className="bg-white p-5 rounded-3xl border border-gray-100 flex items-start gap-4 shadow-sm">
-                                <div className={`p-3 rounded-xl ${log.type === 'CREATED' ? 'bg-emerald-50 text-emerald-600' : 'bg-blue-50 text-blue-600'}`}><Info size={20}/></div>
+                                <div className={`p-3 rounded-xl ${log.type === 'CREATED' ? 'bg-emerald-50 text-emerald-600' : log.type === 'STOCK_ADJUST' ? 'bg-amber-50 text-amber-600' : 'bg-blue-50 text-blue-600'}`}>
+                                    {log.type === 'STOCK_ADJUST' ? <Truck size={20}/> : <Info size={20}/>}
+                                </div>
                                 <div className="flex-1">
                                     <div className="flex justify-between items-center mb-1"><span className="text-[10px] font-black uppercase text-slate-400">{log.type}</span><span className="text-[9px] text-gray-400 font-bold">{new Date(log.timestamp).toLocaleString()}</span></div>
                                     <p className="text-xs font-bold text-slate-700">{log.details}</p>
@@ -850,6 +958,77 @@ export const Inventory: React.FC = () => {
                     <button onClick={handleSaveProduct} className="flex-1 md:flex-none px-6 md:px-14 py-3 md:py-5 bg-slate-900 text-white rounded-[2rem] font-black text-[8px] md:text-[10px] uppercase tracking-widest md:tracking-[0.2em] shadow-2xl hover:bg-brand-600 transition-all flex items-center justify-center gap-2">Consolidar <Save size={16}/></button>
                 </div>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL ENTRADA DE STOCK (NUEVO) */}
+      {isStockEntryModalOpen && editingProduct && (
+        <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-md flex items-center justify-center z-[250] p-4 animate-in fade-in">
+          <div className="bg-white rounded-[3rem] p-8 w-full max-w-lg shadow-2xl animate-in zoom-in space-y-6">
+            <div className="flex justify-between items-center border-b border-gray-100 pb-4">
+              <div>
+                <h3 className="text-xl font-black text-slate-900 uppercase tracking-tighter flex items-center gap-3">
+                  <Truck className="text-brand-500" size={24}/> Reaprovisionamiento
+                </h3>
+                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mt-1">
+                  {stockEntryTarget === 'PARENT' ? editingProduct.name : `Variante: ${editingProduct.variants.find(v => v.id === stockEntryTarget)?.name}`}
+                </p>
+              </div>
+              <button onClick={() => setIsStockEntryModalOpen(false)} className="p-3 bg-gray-50 hover:bg-gray-100 rounded-2xl transition-all"><X size={20}/></button>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-1">
+                <label className="text-[10px] font-black text-slate-400 uppercase pl-2">Cantidad *</label>
+                <input 
+                  type="number" 
+                  autoFocus
+                  className="w-full bg-gray-50 border-2 border-transparent p-4 rounded-2xl font-black text-xl text-slate-800 outline-none focus:border-brand-500" 
+                  value={stockEntryData.qty} 
+                  onChange={e => setStockEntryData({...stockEntryData, qty: parseInt(e.target.value) || 0})}
+                  min={1}
+                />
+              </div>
+              <div className="space-y-1">
+                <label className="text-[10px] font-black text-slate-400 uppercase pl-2">Costo Unit. *</label>
+                <input 
+                  type="number" 
+                  className="w-full bg-gray-50 border-2 border-transparent p-4 rounded-2xl font-black text-xl text-brand-600 outline-none focus:border-brand-500" 
+                  value={stockEntryData.unitCost} 
+                  onChange={e => setStockEntryData({...stockEntryData, unitCost: parseFloat(e.target.value) || 0})}
+                  min={0.01}
+                />
+              </div>
+            </div>
+
+            <div className="space-y-4">
+              <div className="space-y-1">
+                <label className="text-[10px] font-black text-slate-400 uppercase pl-2">Proveedor</label>
+                <input 
+                  className="w-full bg-gray-50 border-none p-4 rounded-2xl font-bold text-slate-700 outline-none" 
+                  placeholder="Ej: Distribuidora Central" 
+                  value={stockEntryData.supplier} 
+                  onChange={e => setStockEntryData({...stockEntryData, supplier: e.target.value})}
+                />
+              </div>
+              <div className="space-y-1">
+                <label className="text-[10px] font-black text-slate-400 uppercase pl-2">Notas / Motivo</label>
+                <textarea 
+                  className="w-full bg-gray-50 border-none p-4 rounded-2xl font-bold text-slate-700 outline-none h-24 resize-none" 
+                  placeholder="Observaciones de la entrada..." 
+                  value={stockEntryData.note} 
+                  onChange={e => setStockEntryData({...stockEntryData, note: e.target.value})}
+                />
+              </div>
+            </div>
+
+            <button 
+              onClick={handleConfirmStockEntry} 
+              className="w-full bg-slate-900 text-white font-black py-5 rounded-[2rem] shadow-xl hover:bg-brand-600 transition-all uppercase tracking-widest text-xs"
+            >
+              Registrar Entrada de Stock
+            </button>
           </div>
         </div>
       )}
