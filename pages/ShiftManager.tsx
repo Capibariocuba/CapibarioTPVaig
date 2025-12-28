@@ -7,7 +7,7 @@ import { Unlock, DollarSign, Printer, AlertTriangle, ArrowUp, X, Key, CheckCircl
 export const ShiftManager: React.FC<{ onOpen?: () => void }> = ({ onOpen }) => {
   const { 
     activeShift, openShift, closeShift, getCurrentCash, currentUser, validatePin, 
-    sales, products, businessConfig, notify, logout 
+    sales, products, businessConfig, notify, logout, ledger 
   } = useStore();
   
   // Estados de flujo
@@ -29,14 +29,15 @@ export const ShiftManager: React.FC<{ onOpen?: () => void }> = ({ onOpen }) => {
     if (!activeShift) return {};
     const totals: Record<string, number> = {};
     const turnSales = sales.filter(s => s.shiftId === activeShift.id);
+    
+    // Obtener efectivo neto (Ingresos - Cambios - Reembolsos) del sistema contable filtrado por este turno
     const systemCash = getCurrentCash();
     
-    // Solo efectivo tracked por getCurrentCash
     Object.entries(systemCash).forEach(([curr, val]) => {
       totals[`CASH_${curr}`] = val as number;
     });
 
-    // Otros métodos de pago sumados de las ventas
+    // Otros métodos de pago sumados de las ventas del turno
     turnSales.forEach(sale => {
       sale.payments.forEach(pay => {
         if (pay.method !== 'CASH') {
@@ -45,6 +46,7 @@ export const ShiftManager: React.FC<{ onOpen?: () => void }> = ({ onOpen }) => {
         }
       });
     });
+
     return totals;
   }, [activeShift, sales, getCurrentCash]);
 
@@ -77,10 +79,8 @@ export const ShiftManager: React.FC<{ onOpen?: () => void }> = ({ onOpen }) => {
     const results: any[] = [];
 
     products.forEach(p => {
-      // Stock Inicial del snapshot de apertura
       const startStock = currentShift.initialStock[p.id] || 0;
       
-      // Cálculo de ENTRADAS desde el historial (logs de STOCK_ADJUST realizados en este turno)
       const entriesQty = (p.history || [])
         .filter(log => {
           const logTime = new Date(log.timestamp).getTime();
@@ -92,23 +92,30 @@ export const ShiftManager: React.FC<{ onOpen?: () => void }> = ({ onOpen }) => {
         })
         .reduce((sum, log) => sum + (log.details_raw?.after?.qty || 0), 0);
 
-      // Ventas Base (sin variante)
       const soldQty = turnSales.reduce((acc, sale) => {
         const item = sale.items.find(i => i.id === p.id && !i.selectedVariantId);
         return acc + (item?.quantity || 0);
       }, 0);
+
+      // Descontar reembolsos del total vendido en este turno
+      const refundedQty = turnSales.reduce((acc, sale) => {
+          const itemRefunded = sale.refunds?.filter(r => new Date(r.timestamp).getTime() >= startTime && new Date(r.timestamp).getTime() <= endTime)
+              .reduce((rAcc, r) => rAcc + (r.items.find(ri => ri.cartId === p.id)?.qty || 0), 0) || 0;
+          return acc + itemRefunded;
+      }, 0);
+
+      const netSold = soldQty - refundedQty;
 
       if (startStock > 0 || soldQty > 0 || entriesQty > 0) {
         results.push({
           name: p.name,
           start: startStock,
           entries: entriesQty,
-          sales: soldQty,
+          sales: netSold,
           final: p.stock
         });
       }
 
-      // Variantes
       p.variants.forEach(v => {
         const vKey = `${p.id}-${v.id}`;
         const startV = currentShift.initialStock[vKey] || 0;
@@ -129,12 +136,20 @@ export const ShiftManager: React.FC<{ onOpen?: () => void }> = ({ onOpen }) => {
           return acc + (item?.quantity || 0);
         }, 0);
 
+        const refundedV = turnSales.reduce((acc, sale) => {
+            const itemRefunded = sale.refunds?.filter(r => new Date(r.timestamp).getTime() >= startTime && new Date(r.timestamp).getTime() <= endTime)
+                .reduce((rAcc, r) => rAcc + (r.items.find(ri => ri.cartId === vKey)?.qty || 0), 0) || 0;
+            return acc + itemRefunded;
+        }, 0);
+
+        const netSoldV = soldV - refundedV;
+
         if (startV > 0 || soldV > 0 || entriesV > 0) {
           results.push({
             name: `${p.name} (${v.name})`,
             start: startV,
             entries: entriesV,
-            sales: soldV,
+            sales: netSoldV,
             final: v.stock
           });
         }
@@ -160,7 +175,6 @@ export const ShiftManager: React.FC<{ onOpen?: () => void }> = ({ onOpen }) => {
       return;
     }
 
-    // Capturar datos para el reporte Z antes de limpiar
     const summary = {
       shift: { ...activeShift },
       metrics: { ...expectedMetrics },
@@ -216,7 +230,7 @@ export const ShiftManager: React.FC<{ onOpen?: () => void }> = ({ onOpen }) => {
         </table>
 
         <div style="border-bottom: 1px solid #000; margin: 3mm 0 2mm 0;"></div>
-        <p style="font-weight: bold; margin: 0 0 1mm 0;">MOVIMIENTO INVENTARIO</p>
+        <p style="font-weight: bold; margin: 0 0 1mm 0;">MOVIMIENTO INVENTARIO (NETO)</p>
         <table style="width: 100%; font-size: 7pt; border-collapse: collapse;">
           <tr style="border-bottom: 1px solid #000;">
             <th style="text-align: left; padding: 1mm 0;">ITEM</th>
@@ -262,7 +276,6 @@ export const ShiftManager: React.FC<{ onOpen?: () => void }> = ({ onOpen }) => {
   };
 
   const handleFinalReset = () => {
-    // Bloqueo total de terminal tras ver el reporte
     logout();
     window.location.reload();
   };

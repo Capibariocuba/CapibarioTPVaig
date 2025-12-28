@@ -2,7 +2,7 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { 
   StoreContextType, View, CurrencyConfig, LedgerEntry, User, 
-  BusinessConfig, Coupon, BogoOffer, Offer, Role, Product, Client, ClientGroup, Ticket, Sale, Warehouse, LicenseTier, POSStoreTerminal, Category, PaymentDetail, PurchaseHistoryItem, Shift
+  BusinessConfig, Coupon, BogoOffer, Offer, Role, Product, Client, ClientGroup, Ticket, Sale, Warehouse, LicenseTier, POSStoreTerminal, Category, PaymentDetail, PurchaseHistoryItem, Shift, Refund, RefundItem
 } from '../types';
 import { MOCK_USERS, DEFAULT_BUSINESS_CONFIG, CATEGORIES as DEFAULT_CATEGORIES } from '../constants';
 import { PermissionEngine } from '../security/PermissionEngine';
@@ -288,6 +288,90 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     return finalTicket;
   }, [products, businessConfig, activePosTerminalId, activeShift, currentUser, convertCurrency, notify, selectedClientId, currencies, clients]);
 
+  const processRefund = useCallback((saleId: string, refundItems: RefundItem[], authUser: User): boolean => {
+    const sale = sales.find(s => s.id === saleId);
+    if (!sale) return false;
+
+    const totalRefundCUP = refundItems.reduce((acc, item) => acc + item.amountCUP, 0);
+    const timestamp = new Date().toISOString();
+    const refundId = generateUniqueId();
+
+    // 1. Reversión de Stock
+    const updatedProducts = products.map(p => {
+      const itemsToRefund = refundItems.filter(ri => ri.cartId.startsWith(p.id));
+      if (itemsToRefund.length === 0) return p;
+
+      const newP = { ...p };
+      itemsToRefund.forEach(ri => {
+        const cartItemInSale = sale.items.find(si => si.cartId === ri.cartId);
+        if (!cartItemInSale) return;
+
+        if (cartItemInSale.selectedVariantId) {
+          newP.variants = newP.variants.map(v => 
+            v.id === cartItemInSale.selectedVariantId ? { ...v, stock: (v.stock || 0) + ri.qty } : v
+          );
+        } else {
+          newP.stock = (newP.stock || 0) + ri.qty;
+        }
+
+        newP.history = [{
+          id: generateUniqueId(),
+          timestamp,
+          type: 'REFUND_RESTOCK',
+          userName: authUser.name,
+          details: `Reembolso Ticket ${saleId.slice(-6)}: +${ri.qty} unidades`,
+          entityType: cartItemInSale.selectedVariantId ? 'VARIANT' : 'PRODUCT',
+          entityId: cartItemInSale.selectedVariantId || p.id
+        }, ...(newP.history || [])];
+      });
+      return newP;
+    });
+
+    // 2. Salida Contable (Ledger)
+    const newLedgerEntry: LedgerEntry = {
+      id: generateUniqueId(),
+      timestamp,
+      type: 'REFUND',
+      direction: 'OUT',
+      amount: totalRefundCUP,
+      currency: 'CUP',
+      paymentMethod: 'CASH',
+      userId: authUser.id,
+      userName: authUser.name,
+      description: `Reembolso Ticket ${saleId.slice(-6)}`,
+      txId: refundId
+    };
+
+    // 3. Actualizar Saldo de Cliente si fue con Crédito
+    if (sale.payments.some(p => p.method === 'CREDIT') && sale.clientId) {
+        // En esta versión simplificada devolvemos a CUP por defecto o saldo si aplica
+        // Para cumplir la regla "salida contable en CUP", lo registramos como salida de caja CUP.
+    }
+
+    // Actualizar estados
+    setProducts(updatedProducts);
+    setLedger(prev => [...prev, newLedgerEntry]);
+    
+    // Fix: Explicitly assign totalRefundCUP to totalCUP shorthand property which referred to an inexistent variable.
+    const newRefund: Refund = {
+        id: refundId,
+        timestamp,
+        shiftId: activeShift?.id || 'NO-SHIFT',
+        authorizedBy: authUser.name,
+        items: refundItems,
+        totalCUP: totalRefundCUP,
+        method: 'CUP'
+    };
+
+    setSales(prev => prev.map(s => s.id === saleId ? {
+        ...s,
+        refunds: [...(s.refunds || []), newRefund]
+    } : s));
+
+    notify(`Reembolso procesado: -$${totalRefundCUP.toFixed(2)} CUP`, "success");
+    return true;
+  }, [sales, products, activeShift, notify]);
+
   const login = async (pin: string): Promise<boolean> => {
     const hashed = await hashPin(pin);
     const u = users.find(u => u.pin === hashed);
@@ -457,6 +541,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         ));
       },
       processSale,
+      processRefund,
       posCurrency, setPosCurrency, activeShift, 
       openShift: (cash: Record<string, number>) => {
         const snapshot: Record<string, number> = {};
@@ -477,7 +562,6 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       closeShift: (cash: Record<string, number>, closedBy: string) => {
         setActiveShift(null);
         localStorage.removeItem('activeShift');
-        // No deslogueamos aquí para que ShiftManager pueda mostrar el reporte final antes de que el usuario cierre sesión manualmente
       },
       addCurrency: (c) => setCurrencies(prev => [...prev, c]),
       updateCurrency: (c) => setCurrencies(prev => prev.map(curr => curr.code === c.code ? c : curr)),

@@ -217,7 +217,7 @@ export interface PricingRule {
 export interface AuditLog {
   id: string;
   timestamp: string;
-  type: 'CREATED' | 'UPDATED' | 'DELETED' | 'STOCK_ADJUST' | 'VARIANT_ADDED' | 'VARIANT_REMOVED' | 'RULE_ADDED' | 'RULE_REMOVED' | 'VARIANT_UPDATED' | 'RULE_UPDATED';
+  type: 'CREATED' | 'UPDATED' | 'DELETED' | 'STOCK_ADJUST' | 'VARIANT_ADDED' | 'VARIANT_REMOVED' | 'RULE_ADDED' | 'RULE_REMOVED' | 'VARIANT_UPDATED' | 'RULE_UPDATED' | 'REFUND_RESTOCK';
   userName: string;
   details: string;
   entityType?: 'PRODUCT' | 'VARIANT' | 'PRICE_RULE';
@@ -238,6 +238,50 @@ export interface Category {
   id: string;
   name: string;
   color: string;
+}
+
+export interface PaymentDetail {
+  method: PaymentMethodType;
+  amount: number;
+  currency: string;
+}
+
+export interface RefundItem {
+  cartId: string;
+  qty: number;
+  amountCUP: number;
+}
+
+export interface Refund {
+  id: string;
+  timestamp: string;
+  shiftId: string;
+  authorizedBy: string;
+  items: RefundItem[];
+  totalCUP: number;
+  method: 'CUP' | 'CREDIT';
+}
+
+export interface Ticket {
+  id: string;
+  items: any[];
+  subtotal: number;
+  discount: number;
+  total: number;
+  payments: PaymentDetail[];
+  currency: string;
+  note?: string;
+  appliedCouponId?: string;
+  clientId?: string;
+  sellerName?: string;
+  clientRemainingCredit?: number;
+  timestamp: string;
+}
+
+export interface Sale extends Ticket {
+  shiftId: string;
+  date: string;
+  refunds?: Refund[];
 }
 
 export interface Product {
@@ -291,33 +335,6 @@ export interface ClientGroup {
   name: string;
   color: string;
   createdAt: string;
-}
-
-export interface PaymentDetail {
-  method: PaymentMethodType;
-  amount: number;
-  currency: string;
-}
-
-export interface Ticket {
-  id: string;
-  items: any[];
-  subtotal: number;
-  discount: number;
-  total: number;
-  payments: PaymentDetail[];
-  currency: string;
-  note?: string;
-  appliedCouponId?: string;
-  clientId?: string;
-  sellerName?: string;
-  clientRemainingCredit?: number;
-  timestamp: string;
-}
-
-export interface Sale extends Ticket {
-  shiftId: string;
-  date: string;
 }
 
 export interface Shift {
@@ -379,6 +396,7 @@ export interface StoreContextType {
   updateQuantity: (cartId: string, delta: number) => void;
   clearCart: () => void;
   processSale: (saleData: any) => Ticket | null;
+  processRefund: (saleId: string, refundItems: RefundItem[], authUser: User) => boolean;
   rates: Record<string, number>;
   posCurrency: string;
   setPosCurrency: (code: string) => void;
