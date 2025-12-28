@@ -175,14 +175,43 @@ export const ShiftManager: React.FC<{ onOpen?: () => void }> = ({ onOpen }) => {
       return;
     }
 
+    const turnSales = sales.filter(s => s.shiftId === activeShift!.id);
+    const startTime = new Date(activeShift!.openedAt).getTime();
+    const endTime = Date.now();
+
+    // NUEVAS MÉTRICAS DETALLADAS
+    let rInCaja = 0;
+    let rFueraCaja = 0;
+    let couponDisc = 0;
+    let bogoDisc = 0;
+    let bogoApps = 0;
+
+    turnSales.forEach(sale => {
+        // Descuentos desglosados (ahora guardados en processSale)
+        couponDisc += (sale.couponDiscount || 0);
+        bogoDisc += (sale.bogoDiscount || 0);
+        bogoApps += (sale.bogoAppsCount || 0);
+
+        // Reembolsos dentro de este turno
+        sale.refunds?.filter(r => new Date(r.timestamp).getTime() >= startTime && new Date(r.timestamp).getTime() <= endTime).forEach(ref => {
+            if (ref.refundSource === 'OUTSIDE_CASHBOX') rFueraCaja += ref.totalCUP;
+            else rInCaja += ref.totalCUP;
+        });
+    });
+
     const summary = {
       shift: { ...activeShift },
       metrics: { ...expectedMetrics },
       actual: { ...finalCounts },
       inventory: [...inventoryReportData],
-      totalGross: sales.filter(s => s.shiftId === activeShift!.id).reduce((a, b) => a + b.total, 0),
+      totalGross: turnSales.reduce((a, b) => a + b.total, 0),
       closedAt: new Date().toISOString(),
-      closedBy: authUserInfo?.name
+      closedBy: authUserInfo?.name,
+      refundsIn: rInCaja,
+      refundsOut: rFueraCaja,
+      couponDisc,
+      bogoDisc,
+      bogoApps
     };
 
     setLastShiftSummary(summary);
@@ -228,6 +257,23 @@ export const ShiftManager: React.FC<{ onOpen?: () => void }> = ({ onOpen }) => {
             </tr>
           `).join('')}
         </table>
+
+        <div style="border-bottom: 1px solid #000; margin: 3mm 0 2mm 0;"></div>
+        <p style="font-weight: bold; margin: 0 0 1mm 0;">REEMBOLSOS TURNO (CUP)</p>
+        <div style="font-size: 8pt;">
+            <div style="display:flex; justify-content: space-between;"><span>EN CAJA:</span><span>$${formatNum(s.refundsIn)}</span></div>
+            <div style="display:flex; justify-content: space-between;"><span>FUERA CAJA:</span><span>$${formatNum(s.refundsOut)}</span></div>
+            <div style="display:flex; justify-content: space-between; font-weight:bold; margin-top:1mm;"><span>TOTAL DEV.:</span><span>$${formatNum(s.refundsIn + s.refundsOut)}</span></div>
+        </div>
+
+        <div style="border-bottom: 1px solid #000; margin: 3mm 0 2mm 0;"></div>
+        <p style="font-weight: bold; margin: 0 0 1mm 0;">DESCUENTOS Y OFERTAS</p>
+        <div style="font-size: 8pt;">
+            <div style="display:flex; justify-content: space-between;"><span>CUPONES:</span><span>$${formatNum(s.couponDisc)}</span></div>
+            <div style="display:flex; justify-content: space-between;"><span>BOGO:</span><span>$${formatNum(s.bogoDisc)}</span></div>
+            <div style="display:flex; justify-content: space-between;"><span>APPS BOGO:</span><span>${s.bogoApps}</span></div>
+            <div style="display:flex; justify-content: space-between; font-weight:bold; margin-top:1mm;"><span>TOTAL DESC.:</span><span>$${formatNum(s.couponDisc + s.bogoDisc)}</span></div>
+        </div>
 
         <div style="border-bottom: 1px solid #000; margin: 3mm 0 2mm 0;"></div>
         <p style="font-weight: bold; margin: 0 0 1mm 0;">MOVIMIENTO INVENTARIO (NETO)</p>
@@ -396,7 +442,7 @@ export const ShiftManager: React.FC<{ onOpen?: () => void }> = ({ onOpen }) => {
   if (step === 'Z_REPORT') {
     return (
       <div className="h-full bg-slate-950 flex flex-col items-center justify-start p-6 animate-in slide-in-from-bottom duration-700 overflow-y-auto pt-16">
-          <div className="bg-emerald-500 text-white p-10 rounded-[3rem] w-full max-sm mb-10 text-center shadow-2xl shadow-emerald-500/20 shrink-0">
+          <div className="bg-emerald-50 text-white p-10 rounded-[3rem] w-full max-sm mb-10 text-center shadow-2xl shadow-emerald-500/20 shrink-0">
              <CheckCircle size={64} className="mx-auto mb-4" />
              <h2 className="text-2xl font-black uppercase tracking-tighter leading-tight">Ciclo Contable<br/>Cerrado</h2>
              <p className="text-[10px] font-bold uppercase opacity-80 mt-2">Imprima su comprobante Z ahora</p>

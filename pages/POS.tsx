@@ -3,7 +3,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { useStore } from '../context/StoreContext';
 import { 
     Search, Plus, Minus, Trash2, Receipt, User as UserIcon, Tag, Ticket as TicketIcon, 
-    Lock, Unlock, Layers, X, AlertTriangle, Monitor, ChevronRight, CheckCircle, Percent, Wallet, DollarSign, Calendar, Zap, Package, LogOut, Printer, FileDown, Sparkles, Gift, ArrowLeft, History, RefreshCcw, Key
+    Lock, Unlock, Layers, X, AlertTriangle, Monitor, ChevronRight, CheckCircle, Percent, Wallet, DollarSign, Calendar, Zap, Package, LogOut, Printer, FileDown, Sparkles, Gift, ArrowLeft, History, RefreshCcw, Key, Box
 } from 'lucide-react';
 import { PaymentModal } from '../components/PaymentModal';
 import { Currency, Ticket, Product, PaymentDetail, Coupon, ProductVariant, Client, View, BogoOffer, Sale, RefundItem, User, Role } from '../types';
@@ -44,6 +44,7 @@ export const POS: React.FC = () => {
   const [selectedOrder, setSelectedOrder] = useState<Sale | null>(null);
   const [isRefundModalOpen, setIsRefundModalOpen] = useState(false);
   const [refundQtys, setRefundQtys] = useState<Record<string, number>>({});
+  const [refundSource, setRefundSource] = useState<'CASHBOX' | 'OUTSIDE_CASHBOX'>('CASHBOX');
   const [showAuthPinModal, setShowAuthPinModal] = useState(false);
   const [authPin, setAuthPin] = useState('');
 
@@ -143,8 +144,9 @@ export const POS: React.FC = () => {
   }, [cart, posCurrency, rates]);
 
   // --- MOTOR DE OFERTAS BOGO ---
-  const bogoDiscountAmount = useMemo(() => {
+  const bogoInfo = useMemo(() => {
     let totalDiscount = 0;
+    let totalApps = 0;
     const now = new Date();
     const activeBogoOffers = bogoOffers.filter(o => 
         o.status === 'ACTIVE' && now >= new Date(o.startAt) && now <= new Date(o.endAt)
@@ -167,10 +169,11 @@ export const POS: React.FC = () => {
                     discountPerApp = Math.max(0, priceDiff) * offer.getQty;
                 }
                 totalDiscount += discountPerApp * effectiveApps;
+                totalApps += effectiveApps;
             }
         }
     });
-    return round2(totalDiscount);
+    return { totalDiscount: round2(totalDiscount), totalApps };
   }, [cart, bogoOffers, posCurrency, rates]);
 
   const couponDiscountAmount = useMemo(() => {
@@ -182,9 +185,9 @@ export const POS: React.FC = () => {
   }, [appliedCoupon, cartSubtotal, posCurrency, rates]);
 
   const cartTotal = useMemo(() => {
-    const afterBogo = cartSubtotal - bogoDiscountAmount;
+    const afterBogo = cartSubtotal - bogoInfo.totalDiscount;
     return round2(Math.max(0, afterBogo - couponDiscountAmount));
-  }, [cartSubtotal, bogoDiscountAmount, couponDiscountAmount]);
+  }, [cartSubtotal, bogoInfo.totalDiscount, couponDiscountAmount]);
 
   // --- ACCIONES DE FIDELIZACIÓN ---
   const handleApplyCoupon = () => {
@@ -252,7 +255,19 @@ export const POS: React.FC = () => {
   };
 
   const handleConfirmSale = (payments: PaymentDetail[]) => {
-    const ticket = processSale({ items: cart, subtotal: cartSubtotal, discount: round2(couponDiscountAmount + bogoDiscountAmount), total: cartTotal, payments, currency: posCurrency, clientId: selectedClientId, appliedCouponId: appliedCoupon?.id });
+    const ticket = processSale({ 
+        items: cart, 
+        subtotal: cartSubtotal, 
+        discount: round2(couponDiscountAmount + bogoInfo.totalDiscount), 
+        couponDiscount: couponDiscountAmount,
+        bogoDiscount: bogoInfo.totalDiscount,
+        bogoAppsCount: bogoInfo.totalApps,
+        total: cartTotal, 
+        payments, 
+        currency: posCurrency, 
+        clientId: selectedClientId, 
+        appliedCouponId: appliedCoupon?.id 
+    });
     if (ticket) { setCurrentTicket(ticket); setShowTicketModal(true); clearCart(); setAppliedCoupon(null); setSelectedClientId(null); setShowPaymentModal(false); }
   };
 
@@ -260,6 +275,7 @@ export const POS: React.FC = () => {
   const handleStartRefund = (order: Sale) => {
     if (currentUser?.role === Role.ADMIN || currentUser?.role === Role.ACCOUNTANT) {
         setRefundQtys({});
+        setRefundSource('CASHBOX');
         setIsRefundModalOpen(true);
     } else {
         setShowAuthPinModal(true);
@@ -272,6 +288,7 @@ export const POS: React.FC = () => {
         setShowAuthPinModal(false);
         setAuthPin('');
         setRefundQtys({});
+        setRefundSource('CASHBOX');
         setIsRefundModalOpen(true);
     } else {
         notify("Autorización denegada: Se requiere Administrador", "error");
@@ -294,8 +311,7 @@ export const POS: React.FC = () => {
 
     if (itemsToRefund.length === 0) { notify("Seleccione al menos un producto", "error"); return; }
     
-    // El actor del reembolso es el usuario actual si tiene permiso, o el admin que autorizó (simulado como sistema para simplicidad)
-    const success = processRefund(selectedOrder.id, itemsToRefund, currentUser!);
+    const success = processRefund(selectedOrder.id, itemsToRefund, currentUser!, refundSource);
     if (success) {
         setIsRefundModalOpen(false);
         setSelectedOrder(null);
@@ -396,8 +412,8 @@ export const POS: React.FC = () => {
                     <div className="p-6 bg-white border-t border-gray-100 space-y-4">
                         <div className="space-y-2 border-b border-gray-100 pb-4">
                             <div className="flex justify-between text-[10px] font-black text-slate-400 uppercase tracking-widest"><span>Subtotal</span><span>{currencies.find(c => c.code === posCurrency)?.symbol}{cartSubtotal.toFixed(2)}</span></div>
-                            {(bogoDiscountAmount > 0 || couponDiscountAmount > 0) && (
-                                <div className="flex justify-between text-[10px] font-black text-amber-600 uppercase tracking-widest"><span>Descuentos</span><span>-{currencies.find(c => c.code === posCurrency)?.symbol}{(bogoDiscountAmount + couponDiscountAmount).toFixed(2)}</span></div>
+                            {(bogoInfo.totalDiscount > 0 || couponDiscountAmount > 0) && (
+                                <div className="flex justify-between text-[10px] font-black text-amber-600 uppercase tracking-widest"><span>Descuentos</span><span>-{currencies.find(c => c.code === posCurrency)?.symbol}{(bogoInfo.totalDiscount + couponDiscountAmount).toFixed(2)}</span></div>
                             )}
                         </div>
                         <div className="flex justify-between items-center"><span className="font-black text-sm uppercase tracking-widest text-slate-400">Total</span><span className="text-3xl font-black text-slate-900 tracking-tighter">{currencies.find(c => c.code === posCurrency)?.symbol}{cartTotal.toFixed(2)}</span></div>
@@ -471,7 +487,10 @@ export const POS: React.FC = () => {
                                 <h4 className="text-[10px] font-black text-red-600 uppercase tracking-widest flex items-center gap-2"><RefreshCcw size={14}/> Historial de Reembolsos</h4>
                                 {selectedOrder.refunds.map(r => (
                                     <div key={r.id} className="bg-white/60 p-3 rounded-2xl text-[9px] flex justify-between items-center">
-                                        <span className="font-bold text-slate-600">{new Date(r.timestamp).toLocaleString()} - Por: {r.authorizedBy}</span>
+                                        <div className="flex flex-col">
+                                            <span className="font-bold text-slate-600">{new Date(r.timestamp).toLocaleString()} - Por: {r.authorizedBy}</span>
+                                            <span className="text-[8px] font-black uppercase text-slate-400 mt-0.5">{r.refundSource === 'CASHBOX' ? 'Desde Caja' : 'Fuera de Caja'}</span>
+                                        </div>
                                         <span className="font-black text-red-500">-${r.totalCUP.toFixed(2)} CUP</span>
                                     </div>
                                 ))}
@@ -498,25 +517,45 @@ export const POS: React.FC = () => {
                         </div>
                         <button onClick={() => setIsRefundModalOpen(false)} className="p-3 bg-white/10 rounded-2xl"><X size={20}/></button>
                     </div>
-                    <div className="flex-1 overflow-y-auto p-8 space-y-4 custom-scrollbar">
-                        {selectedOrder.items.map(item => {
-                            const alreadyRefunded = selectedOrder.refunds?.reduce((acc, r) => acc + (r.items.find(ri => ri.cartId === item.cartId)?.qty || 0), 0) || 0;
-                            const maxAvailable = item.quantity - alreadyRefunded;
-                            if (maxAvailable <= 0) return null;
-                            return (
-                                <div key={item.cartId} className="bg-gray-50 p-5 rounded-3xl border border-gray-100 flex items-center gap-4">
-                                    <div className="flex-1">
-                                        <h4 className="text-[10px] font-black uppercase text-slate-800 line-clamp-1">{item.name}</h4>
-                                        <p className="text-[8px] font-bold text-slate-400 uppercase">Disp: {maxAvailable} de {item.quantity}</p>
+                    <div className="flex-1 overflow-y-auto p-8 space-y-6 custom-scrollbar">
+                        <div className="space-y-4">
+                            {selectedOrder.items.map(item => {
+                                const alreadyRefunded = selectedOrder.refunds?.reduce((acc, r) => acc + (r.items.find(ri => ri.cartId === item.cartId)?.qty || 0), 0) || 0;
+                                const maxAvailable = item.quantity - alreadyRefunded;
+                                if (maxAvailable <= 0) return null;
+                                return (
+                                    <div key={item.cartId} className="bg-gray-50 p-5 rounded-3xl border border-gray-100 flex items-center gap-4">
+                                        <div className="flex-1">
+                                            <h4 className="text-[10px] font-black uppercase text-slate-800 line-clamp-1">{item.name}</h4>
+                                            <p className="text-[8px] font-bold text-slate-400 uppercase">Disp: {maxAvailable} de {item.quantity}</p>
+                                        </div>
+                                        <div className="flex items-center gap-3">
+                                            <button onClick={() => setRefundQtys({...refundQtys, [item.cartId]: Math.max(0, (refundQtys[item.cartId] || 0) - 1)})} className="w-8 h-8 rounded-xl bg-white shadow-sm flex items-center justify-center text-slate-400"><Minus size={14}/></button>
+                                            <span className="w-6 text-center font-black text-xs text-slate-900">{refundQtys[item.cartId] || 0}</span>
+                                            <button onClick={() => setRefundQtys({...refundQtys, [item.cartId]: Math.min(maxAvailable, (refundQtys[item.cartId] || 0) + 1)})} className="w-8 h-8 rounded-xl bg-white shadow-sm flex items-center justify-center text-slate-900"><Plus size={14}/></button>
+                                        </div>
                                     </div>
-                                    <div className="flex items-center gap-3">
-                                        <button onClick={() => setRefundQtys({...refundQtys, [item.cartId]: Math.max(0, (refundQtys[item.cartId] || 0) - 1)})} className="w-8 h-8 rounded-xl bg-white shadow-sm flex items-center justify-center text-slate-400"><Minus size={14}/></button>
-                                        <span className="w-6 text-center font-black text-xs text-slate-900">{refundQtys[item.cartId] || 0}</span>
-                                        <button onClick={() => setRefundQtys({...refundQtys, [item.cartId]: Math.min(maxAvailable, (refundQtys[item.cartId] || 0) + 1)})} className="w-8 h-8 rounded-xl bg-white shadow-sm flex items-center justify-center text-slate-900"><Plus size={14}/></button>
-                                    </div>
-                                </div>
-                            );
-                        })}
+                                );
+                            })}
+                        </div>
+
+                        {/* SECTOR ORIGEN REEMBOLSO */}
+                        <div className="bg-gray-50 p-6 rounded-[2rem] border border-gray-100">
+                             <h4 className="text-[10px] font-black uppercase text-slate-400 mb-4 tracking-widest">Origen del Reembolso</h4>
+                             <div className="grid grid-cols-2 gap-3">
+                                <button onClick={() => setRefundSource('CASHBOX')} className={`p-4 rounded-2xl border-2 transition-all flex flex-col items-center gap-2 ${refundSource === 'CASHBOX' ? 'bg-white border-red-500 text-red-600 shadow-lg' : 'bg-transparent border-gray-200 text-gray-400'}`}>
+                                    <Wallet size={20}/>
+                                    <span className="text-[8px] font-black uppercase tracking-tighter">En Caja</span>
+                                </button>
+                                <button onClick={() => setRefundSource('OUTSIDE_CASHBOX')} className={`p-4 rounded-2xl border-2 transition-all flex flex-col items-center gap-2 ${refundSource === 'OUTSIDE_CASHBOX' ? 'bg-white border-slate-900 text-slate-900 shadow-lg' : 'bg-transparent border-gray-200 text-gray-400'}`}>
+                                    <Box size={20}/>
+                                    <span className="text-[8px] font-black uppercase tracking-tighter">Fuera de Caja</span>
+                                </button>
+                             </div>
+                             <p className="mt-3 text-[8px] font-bold text-slate-400 uppercase text-center leading-tight">
+                                {refundSource === 'CASHBOX' ? 'Resta efectivo de la caja del turno (requiere liquidez).' : 'Devuelve stock sin afectar el efectivo del turno.'}
+                             </p>
+                        </div>
                     </div>
                     <div className="p-8 bg-white border-t border-gray-100">
                         <button onClick={handleProcessFinalRefund} className="w-full bg-red-600 text-white font-black py-5 rounded-3xl shadow-xl uppercase tracking-widest text-xs hover:bg-red-700 transition-all flex items-center justify-center gap-2">Confirmar Devolución <RefreshCcw size={18}/></button>

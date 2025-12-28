@@ -148,8 +148,20 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     return inBase / toRate;
   }, [currencies]);
 
+  const getCurrentCash = useCallback(() => {
+    const cash: any = { CUP: 0, USD: 0, EUR: 0 };
+    ledger.filter(l => l.timestamp >= (activeShift?.openedAt || '') && l.paymentMethod === 'CASH').forEach(l => {
+      if (l.direction === 'IN') cash[l.currency] = (cash[l.currency] || 0) + l.amount;
+      else cash[l.currency] = (cash[l.currency] || 0) - l.amount;
+    });
+    if (activeShift?.startCash) {
+      Object.entries(activeShift.startCash).forEach(([k, v]) => cash[k] = (cash[k] || 0) + (Number(v) || 0));
+    }
+    return cash;
+  }, [ledger, activeShift]);
+
   const processSale = useCallback((saleData: any): Ticket | null => {
-    const { items, total, payments, currency, note, appliedCouponId } = saleData;
+    const { items, total, payments, currency, note, appliedCouponId, couponDiscount, bogoDiscount, bogoAppsCount } = saleData;
     const activeTerminal = businessConfig.posTerminals?.find(t => t.id === activePosTerminalId);
     const warehouseId = activeTerminal?.warehouseId || 'wh-default';
 
@@ -215,12 +227,10 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         txId
       });
 
-      // Lógica de descuento de crédito
       if (p.method === 'CREDIT' && selectedClientId) {
         const rate = currencies.find(c => c.code === p.currency)?.rate || 1;
         const amountInCUP = p.currency === 'CUP' ? p.amount : p.amount * rate;
         
-        // Buscamos el saldo actual para calcular el final
         const currentClient = clients.find(cl => cl.id === selectedClientId);
         if (currentClient) {
           finalRemainingCredit = Math.max(0, (currentClient.creditBalance || 0) - amountInCUP);
@@ -257,6 +267,9 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       items,
       subtotal: saleData.subtotal,
       discount: saleData.discount,
+      couponDiscount,
+      bogoDiscount,
+      bogoAppsCount,
       total,
       payments,
       currency,
@@ -270,7 +283,6 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
     setSales(prev => [...prev, { ...finalTicket, shiftId: activeShift?.id || 'NO-SHIFT', date: new Date().toISOString() }]);
     
-    // Vincular historial al cliente
     if (selectedClientId) {
       const historyItem: PurchaseHistoryItem = {
         id: generateUniqueId(),
@@ -288,13 +300,22 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     return finalTicket;
   }, [products, businessConfig, activePosTerminalId, activeShift, currentUser, convertCurrency, notify, selectedClientId, currencies, clients]);
 
-  const processRefund = useCallback((saleId: string, refundItems: RefundItem[], authUser: User): boolean => {
+  const processRefund = useCallback((saleId: string, refundItems: RefundItem[], authUser: User, source: 'CASHBOX' | 'OUTSIDE_CASHBOX'): boolean => {
     const sale = sales.find(s => s.id === saleId);
     if (!sale) return false;
 
     const totalRefundCUP = refundItems.reduce((acc, item) => acc + item.amountCUP, 0);
     const timestamp = new Date().toISOString();
     const refundId = generateUniqueId();
+
+    // A. VALIDACIÓN DE DISPONIBILIDAD DE CAJA
+    if (source === 'CASHBOX') {
+        const cashAvailable = getCurrentCash().CUP;
+        if (cashAvailable < totalRefundCUP - 0.009) {
+             notify("Fondo insuficiente en caja para este reembolso", "error");
+             return false;
+        }
+    }
 
     // 1. Reversión de Stock
     const updatedProducts = products.map(p => {
@@ -319,7 +340,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           timestamp,
           type: 'REFUND_RESTOCK',
           userName: authUser.name,
-          details: `Reembolso Ticket ${saleId.slice(-6)}: +${ri.qty} unidades`,
+          details: `Reembolso Ticket ${saleId.slice(-6)} (${source === 'CASHBOX' ? 'En Caja' : 'Fuera Caja'}): +${ri.qty} unidades`,
           entityType: cartItemInSale.selectedVariantId ? 'VARIANT' : 'PRODUCT',
           entityId: cartItemInSale.selectedVariantId || p.id
         }, ...(newP.history || [])];
@@ -327,32 +348,27 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       return newP;
     });
 
-    // 2. Salida Contable (Ledger)
-    const newLedgerEntry: LedgerEntry = {
-      id: generateUniqueId(),
-      timestamp,
-      type: 'REFUND',
-      direction: 'OUT',
-      amount: totalRefundCUP,
-      currency: 'CUP',
-      paymentMethod: 'CASH',
-      userId: authUser.id,
-      userName: authUser.name,
-      description: `Reembolso Ticket ${saleId.slice(-6)}`,
-      txId: refundId
-    };
-
-    // 3. Actualizar Saldo de Cliente si fue con Crédito
-    if (sale.payments.some(p => p.method === 'CREDIT') && sale.clientId) {
-        // En esta versión simplificada devolvemos a CUP por defecto o saldo si aplica
-        // Para cumplir la regla "salida contable en CUP", lo registramos como salida de caja CUP.
+    // 2. Salida Contable (Solo si es en caja)
+    if (source === 'CASHBOX') {
+        const newLedgerEntry: LedgerEntry = {
+          id: generateUniqueId(),
+          timestamp,
+          type: 'REFUND',
+          direction: 'OUT',
+          amount: totalRefundCUP,
+          currency: 'CUP',
+          paymentMethod: 'CASH',
+          userId: authUser.id,
+          userName: authUser.name,
+          description: `Reembolso Ticket ${saleId.slice(-6)}`,
+          txId: refundId
+        };
+        setLedger(prev => [...prev, newLedgerEntry]);
     }
 
     // Actualizar estados
     setProducts(updatedProducts);
-    setLedger(prev => [...prev, newLedgerEntry]);
     
-    // Fix: Explicitly assign totalRefundCUP to totalCUP shorthand property which referred to an inexistent variable.
     const newRefund: Refund = {
         id: refundId,
         timestamp,
@@ -360,7 +376,8 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         authorizedBy: authUser.name,
         items: refundItems,
         totalCUP: totalRefundCUP,
-        method: 'CUP'
+        method: 'CUP',
+        refundSource: source
     };
 
     setSales(prev => prev.map(s => s.id === saleId ? {
@@ -368,9 +385,9 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         refunds: [...(s.refunds || []), newRefund]
     } : s));
 
-    notify(`Reembolso procesado: -$${totalRefundCUP.toFixed(2)} CUP`, "success");
+    notify(`Reembolso procesado (${source === 'CASHBOX' ? 'Caja' : 'Stock'}): -$${totalRefundCUP.toFixed(2)} CUP`, "success");
     return true;
-  }, [sales, products, activeShift, notify]);
+  }, [sales, products, activeShift, notify, getCurrentCash]);
 
   const login = async (pin: string): Promise<boolean> => {
     const hashed = await hashPin(pin);
@@ -393,21 +410,11 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   const updateUserPin = useCallback(async (userId: string, newPin: string) => {
     if (!userId || newPin.length !== 4) return;
-    
-    const weakPins = ['1234', '0000', '1111', '2222', '3333', '4444', '5555', '6666', '7777', '8888', '9999'];
-    if (weakPins.includes(newPin)) {
-      notify("PIN demasiado débil", "error");
-      return;
-    }
-
     const hashed = await hashPin(newPin);
-    
-    // Validación de unicidad
     if (users.some(u => u.id !== userId && u.pin === hashed)) {
       notify("PIN ya está siendo utilizado por otro operador", "error");
       return;
     }
-
     setUsers(prev => prev.map(u => u.id === userId ? { ...u, pin: hashed } : u));
     notify("PIN actualizado correctamente", "success");
   }, [users, notify]);
@@ -568,17 +575,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       deleteCurrency: (code) => setCurrencies(prev => prev.filter(c => c.code !== code)),
       isItemLocked: (key, idx) => PermissionEngine.isItemSoftLocked(key, idx, getCurrentTier()),
       rates: currencies.reduce((acc, c) => ({ ...acc, [c.code]: c.rate }), {}),
-      getCurrentCash: () => {
-        const cash: any = { CUP: 0, USD: 0, EUR: 0 };
-        ledger.filter(l => l.timestamp >= (activeShift?.openedAt || '') && l.paymentMethod === 'CASH').forEach(l => {
-          if (l.direction === 'IN') cash[l.currency] = (cash[l.currency] || 0) + l.amount;
-          else cash[l.currency] = (cash[l.currency] || 0) - l.amount;
-        });
-        if (activeShift?.startCash) {
-          Object.entries(activeShift.startCash).forEach(([k, v]) => cash[k] = (cash[k] || 0) + (Number(v) || 0));
-        }
-        return cash;
-      },
+      getCurrentCash,
       addClient: (c) => setClients(prev => [...prev, { ...c, id: c.id || generateUniqueId(), purchaseHistory: [], creditBalance: 0, balance: 0, groupId: c.groupId || 'GENERAL', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() }]),
       updateClient: (c) => setClients(prev => prev.map(client => client.id === c.id ? { ...c, updatedAt: new Date().toISOString() } : client)),
       deleteClient: (id) => setClients(prev => prev.filter(c => c.id !== id)),

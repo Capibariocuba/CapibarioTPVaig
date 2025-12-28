@@ -260,6 +260,7 @@ export interface Refund {
   items: RefundItem[];
   totalCUP: number;
   method: 'CUP' | 'CREDIT';
+  refundSource?: 'CASHBOX' | 'OUTSIDE_CASHBOX';
 }
 
 export interface Ticket {
@@ -267,6 +268,9 @@ export interface Ticket {
   items: any[];
   subtotal: number;
   discount: number;
+  couponDiscount?: number;
+  bogoDiscount?: number;
+  bogoAppsCount?: number;
   total: number;
   payments: PaymentDetail[];
   currency: string;
@@ -396,7 +400,7 @@ export interface StoreContextType {
   updateQuantity: (cartId: string, delta: number) => void;
   clearCart: () => void;
   processSale: (saleData: any) => Ticket | null;
-  processRefund: (saleId: string, refundItems: RefundItem[], authUser: User) => boolean;
+  processRefund: (saleId: string, refundItems: RefundItem[], authUser: User, source: 'CASHBOX' | 'OUTSIDE_CASHBOX') => boolean;
   rates: Record<string, number>;
   posCurrency: string;
   setPosCurrency: (code: string) => void;
