@@ -71,22 +71,38 @@ export const ShiftManager: React.FC<{ onOpen?: () => void }> = ({ onOpen }) => {
     if (!currentShift || !currentShift.initialStock) return [];
     
     const turnSales = sales.filter(s => s.shiftId === currentShift.id);
+    const startTime = new Date(currentShift.openedAt).getTime();
+    const endTime = currentShift.closedAt ? new Date(currentShift.closedAt).getTime() : Date.now();
+    
     const results: any[] = [];
 
     products.forEach(p => {
-      // Stock Inicial
+      // Stock Inicial del snapshot de apertura
       const startStock = currentShift.initialStock[p.id] || 0;
-      // Ventas Base
+      
+      // Cálculo de ENTRADAS desde el historial (logs de STOCK_ADJUST realizados en este turno)
+      const entriesQty = (p.history || [])
+        .filter(log => {
+          const logTime = new Date(log.timestamp).getTime();
+          return logTime >= startTime && logTime <= endTime && 
+                 log.type === 'STOCK_ADJUST' && 
+                 log.entityType === 'PRODUCT' && 
+                 log.entityId === p.id &&
+                 log.details_raw?.after?.qty;
+        })
+        .reduce((sum, log) => sum + (log.details_raw?.after?.qty || 0), 0);
+
+      // Ventas Base (sin variante)
       const soldQty = turnSales.reduce((acc, sale) => {
         const item = sale.items.find(i => i.id === p.id && !i.selectedVariantId);
         return acc + (item?.quantity || 0);
       }, 0);
 
-      if (startStock > 0 || soldQty > 0) {
+      if (startStock > 0 || soldQty > 0 || entriesQty > 0) {
         results.push({
           name: p.name,
           start: startStock,
-          entries: 0, // Reaprovisionamientos no implementados aún
+          entries: entriesQty,
           sales: soldQty,
           final: p.stock
         });
@@ -96,16 +112,28 @@ export const ShiftManager: React.FC<{ onOpen?: () => void }> = ({ onOpen }) => {
       p.variants.forEach(v => {
         const vKey = `${p.id}-${v.id}`;
         const startV = currentShift.initialStock[vKey] || 0;
+        
+        const entriesV = (p.history || [])
+          .filter(log => {
+            const logTime = new Date(log.timestamp).getTime();
+            return logTime >= startTime && logTime <= endTime && 
+                   log.type === 'STOCK_ADJUST' && 
+                   log.entityType === 'VARIANT' && 
+                   log.entityId === v.id &&
+                   log.details_raw?.after?.qty;
+          })
+          .reduce((sum, log) => sum + (log.details_raw?.after?.qty || 0), 0);
+
         const soldV = turnSales.reduce((acc, sale) => {
           const item = sale.items.find(i => i.selectedVariantId === v.id);
           return acc + (item?.quantity || 0);
         }, 0);
 
-        if (startV > 0 || soldV > 0) {
+        if (startV > 0 || soldV > 0 || entriesV > 0) {
           results.push({
             name: `${p.name} (${v.name})`,
             start: startV,
-            entries: 0,
+            entries: entriesV,
             sales: soldV,
             final: v.stock
           });
@@ -193,13 +221,15 @@ export const ShiftManager: React.FC<{ onOpen?: () => void }> = ({ onOpen }) => {
           <tr style="border-bottom: 1px solid #000;">
             <th style="text-align: left; padding: 1mm 0;">ITEM</th>
             <th style="text-align: right;">INI</th>
+            <th style="text-align: right;">ENT</th>
             <th style="text-align: right;">VND</th>
             <th style="text-align: right;">FIN</th>
           </tr>
           ${s.inventory.map((m: any) => `
             <tr>
-              <td style="padding: 1mm 0; white-space: nowrap; overflow: hidden; max-width: 35mm;">${m.name.toUpperCase()}</td>
+              <td style="padding: 1mm 0; white-space: nowrap; overflow: hidden; max-width: 30mm;">${m.name.toUpperCase()}</td>
               <td style="text-align: right;">${m.start}</td>
+              <td style="text-align: right;">${m.entries || 0}</td>
               <td style="text-align: right; font-weight: bold;">${m.sales}</td>
               <td style="text-align: right;">${m.final}</td>
             </tr>
@@ -353,7 +383,7 @@ export const ShiftManager: React.FC<{ onOpen?: () => void }> = ({ onOpen }) => {
   if (step === 'Z_REPORT') {
     return (
       <div className="h-full bg-slate-950 flex flex-col items-center justify-start p-6 animate-in slide-in-from-bottom duration-700 overflow-y-auto pt-16">
-          <div className="bg-emerald-500 text-white p-10 rounded-[3rem] w-full max-w-sm mb-10 text-center shadow-2xl shadow-emerald-500/20 shrink-0">
+          <div className="bg-emerald-500 text-white p-10 rounded-[3rem] w-full max-sm mb-10 text-center shadow-2xl shadow-emerald-500/20 shrink-0">
              <CheckCircle size={64} className="mx-auto mb-4" />
              <h2 className="text-2xl font-black uppercase tracking-tighter leading-tight">Ciclo Contable<br/>Cerrado</h2>
              <p className="text-[10px] font-bold uppercase opacity-80 mt-2">Imprima su comprobante Z ahora</p>
