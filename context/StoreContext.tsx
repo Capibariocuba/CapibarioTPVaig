@@ -122,7 +122,6 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     return saved || businessConfig.posTerminals?.[0]?.id || null;
   });
 
-  // --- EMPLEADOS STATE ---
   const [employees, setEmployees] = useState<Employee[]>(() => {
     const saved = localStorage.getItem('employees');
     return saved ? JSON.parse(saved) : [];
@@ -173,6 +172,24 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }
     return cash;
   }, [ledger, activeShift]);
+
+  const executeLedgerTransaction = useCallback((entry: Partial<LedgerEntry>) => {
+    const newEntry: LedgerEntry = {
+      id: generateUniqueId(),
+      timestamp: new Date().toISOString(),
+      type: entry.type || 'OTHER',
+      direction: entry.direction || 'IN',
+      amount: entry.amount || 0,
+      currency: entry.currency || 'CUP',
+      userId: currentUser?.id || '',
+      userName: currentUser?.name || 'Sistema',
+      description: entry.description || '',
+      paymentMethod: entry.paymentMethod || 'CASH',
+      txId: entry.txId
+    };
+    setLedger(prev => [...prev, newEntry]);
+    return true;
+  }, [currentUser]);
 
   const processSale = useCallback((saleData: any): Ticket | null => {
     const { items, total, payments, currency, note, appliedCouponId, couponDiscount, bogoDiscount, bogoAppsCount } = saleData;
@@ -443,7 +460,6 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     notify("PIN actualizado correctamente", "success");
   }, [users, notify]);
 
-  // --- CRUD CLIENTES & CRÉDITO ---
   const addClientCredit = useCallback((clientId: string, amount: number, reason?: string) => {
     setClients(prev => prev.map(c => c.id === clientId ? { 
       ...c, 
@@ -492,12 +508,10 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     notify("Grupo eliminado", "success");
   }, [notify]);
 
-  // --- CRUD EMPLEADOS ---
   const addEmployee = async (employee: Employee, rawPin: string) => {
     const hashedPin = await hashPin(rawPin);
     const newUserId = generateUniqueId();
     
-    // Crear User para TPV
     const newUser: User = {
       id: newUserId,
       name: employee.name,
@@ -519,12 +533,9 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
     setEmployees(prev => prev.map(e => e.id === employee.id ? { ...employee, updatedAt: new Date().toISOString() } : e));
     
-    // Sincronizar con el User del TPV
     setUsers(prev => prev.map(u => {
       if (u.id === employee.userId) {
-        // Si hay baja laboral, podemos borrarlo de users para que no inicie sesión
         if (employee.terminationDate) {
-          // Opción 1: Devolver nulo y filtrar luego
           return u; 
         }
         return {
@@ -692,8 +703,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       deleteBogoOffer: (id) => setBogoOffers(prev => prev.filter(o => o.id !== id)),
       selectedClientId,
       setSelectedClientId,
-      
-      // EXPOSICIÓN CRUD EMPLEADOS
+      executeLedgerTransaction,
       employees,
       addEmployee,
       updateEmployee,

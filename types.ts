@@ -218,7 +218,7 @@ export interface PricingRule {
 export interface AuditLog {
   id: string;
   timestamp: string;
-  type: 'CREATED' | 'UPDATED' | 'DELETED' | 'STOCK_ADJUST' | 'VARIANT_ADDED' | 'VARIANT_REMOVED' | 'RULE_ADDED' | 'RULE_REMOVED' | 'VARIANT_UPDATED' | 'RULE_UPDATED' | 'REFUND_RESTOCK';
+  type: 'CREATED' | 'UPDATED' | 'DELETED' | 'STOCK_ADJUST' | 'VARIANT_ADDED' | 'VARIANT_REMOVED' | 'RULE_ADDED' | 'RULE_REMOVED' | 'VARIANT_UPDATED' | 'RULE_UPDATED' | 'REFUND_RESTOCK' | 'WASTE_RECORDED';
   userName: string;
   details: string;
   entityType?: 'PRODUCT' | 'VARIANT' | 'PRICE_RULE';

@@ -1,3 +1,4 @@
+
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { useStore } from '../context/StoreContext';
 import { Warehouse, Product, ProductVariant, PricingRule, AuditLog, LicenseTier, Category } from '../types';
@@ -10,7 +11,6 @@ import {
 
 const COLORS = ['#0ea5e9', '#ef4444', '#10b981', '#f59e0b', '#6366f1', '#ec4899', '#64748b', '#000000'];
 
-// UTILIDAD DE GENERACIÓN DE IDS ÚNICOS E IRREPETIBLES (FASE B)
 const generateUniqueId = () => {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
     return crypto.randomUUID().toUpperCase();
@@ -18,7 +18,6 @@ const generateUniqueId = () => {
   return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`.toUpperCase();
 };
 
-// UTILIDAD DE COLOR PARA VARIANTES
 const generateVariantColor = () => {
   const variantColors = ['#0ea5e9', '#10b981', '#f59e0b', '#ef4444', '#6366f1', '#ec4899', '#8b5cf6', '#14b8a6', '#f97316'];
   return variantColors[Math.floor(Math.random() * variantColors.length)];
@@ -28,7 +27,7 @@ export const Inventory: React.FC = () => {
   const { 
     warehouses, addWarehouse, updateWarehouse, deleteWarehouse, isItemLocked, 
     categories, addCategory, updateCategory, deleteCategory, products, addProduct, updateProduct, deleteProduct, notify,
-    businessConfig, currentUser
+    businessConfig, currentUser, executeLedgerTransaction
   } = useStore();
   
   const tier = (businessConfig.license?.tier || 'GOLD') as LicenseTier;
@@ -43,22 +42,24 @@ export const Inventory: React.FC = () => {
   const [isRenaming, setIsRenaming] = useState(false);
   const [renameValue, setRenameValue] = useState('');
 
-  // --- LÓGICA DE FICHA DE PRODUCTO ---
   const [prodTab, setProdTab] = useState<'DETAILS' | 'VARIANTS' | 'RULES' | 'LOG'>('DETAILS');
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [originalProduct, setOriginalProduct] = useState<Product | null>(null);
   const [showScannerStub, setShowScannerStub] = useState(false);
   const [scannerValue, setScannerValue] = useState('');
   
-  // --- LÓGICA DE ENTRADA DE STOCK (NUEVO) ---
   const [isStockEntryModalOpen, setIsStockEntryModalOpen] = useState(false);
   const [stockEntryTarget, setStockEntryTarget] = useState<'PARENT' | string | null>(null);
   const [stockEntryData, setStockEntryData] = useState({ qty: 1, unitCost: 0, supplier: '', note: '' });
 
-  // Borrador de Regla de Precio (Flujo 2 pasos)
-  const [ruleDraft, setRuleDraft] = useState<PricingRule | null>(null);
+  // --- ESTADOS MERMA ---
+  const [isWasteModalOpen, setIsWasteModalOpen] = useState(false);
+  const [wasteSearch, setWasteSearch] = useState('');
+  const [wasteTargetId, setWasteTargetId] = useState<'PARENT' | string>('PARENT');
+  const [wasteQty, setWasteQty] = useState<string>('1');
+  const [selectedWasteProduct, setSelectedWasteProduct] = useState<Product | null>(null);
 
-  // Selección Masiva y Filtros
+  const [ruleDraft, setRuleDraft] = useState<PricingRule | null>(null);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [showHidden, setShowHidden] = useState(false);
 
@@ -108,7 +109,6 @@ export const Inventory: React.FC = () => {
   };
 
   const handleOpenEditProduct = (p: Product) => {
-    // MIGRACIÓN DE COLOR EN VARIANTES AL ABRIR
     const clone: Product = JSON.parse(JSON.stringify(p));
     if (clone.variants) {
       clone.variants = clone.variants.map(v => ({
@@ -142,7 +142,6 @@ export const Inventory: React.FC = () => {
     }
   };
 
-  // --- HANDLER DE ENTRADA DE STOCK (NUEVO) ---
   const handleOpenStockEntry = (target: 'PARENT' | string, currentCost: number) => {
     setStockEntryTarget(target);
     setStockEntryData({ qty: 1, unitCost: currentCost, supplier: '', note: '' });
@@ -163,12 +162,19 @@ export const Inventory: React.FC = () => {
         if (!prev) return null;
         
         let updatedStock = prev.stock;
+        let updatedCost = prev.cost;
         let updatedVariants = prev.variants || [];
         let entityType: 'PRODUCT' | 'VARIANT' = 'PRODUCT';
         let entityId = prev.id;
         let targetLabel = 'Producto Base';
+        let oldCost = 0;
 
         if (stockEntryTarget === 'PARENT') {
+            oldCost = prev.cost || 0;
+            const oldStock = Math.max(0, prev.stock);
+            // COSTO PROMEDIO PONDERADO
+            updatedCost = (oldStock + qty) > 0 ? ((oldCost * oldStock) + (unitCost * qty)) / (oldStock + qty) : unitCost;
+            updatedCost = Math.round((updatedCost + Number.EPSILON) * 100) / 100;
             updatedStock += qty;
         } else {
             const vIndex = updatedVariants.findIndex(v => v.id === stockEntryTarget);
@@ -176,18 +182,27 @@ export const Inventory: React.FC = () => {
                 entityType = 'VARIANT';
                 entityId = updatedVariants[vIndex].id;
                 targetLabel = `Variante: ${updatedVariants[vIndex].name}`;
-                const newV = { ...updatedVariants[vIndex], stock: (updatedVariants[vIndex].stock || 0) + qty };
+                oldCost = updatedVariants[vIndex].cost || 0;
+                const oldVStock = Math.max(0, updatedVariants[vIndex].stock);
+                
+                // COSTO PROMEDIO PONDERADO PARA VARIANTE
+                let vCost = (oldVStock + qty) > 0 ? ((oldCost * oldVStock) + (unitCost * qty)) / (oldVStock + qty) : unitCost;
+                vCost = Math.round((vCost + Number.EPSILON) * 100) / 100;
+                
+                const newV = { ...updatedVariants[vIndex], stock: (updatedVariants[vIndex].stock || 0) + qty, cost: vCost };
                 updatedVariants = [...updatedVariants];
                 updatedVariants[vIndex] = newV;
+                updatedCost = vCost;
             }
         }
 
+        const costInfo = unitCost !== oldCost ? ` Costo: $${oldCost.toFixed(2)} -> $${updatedCost.toFixed(2)}` : '';
         const logEntry: AuditLog = {
             id: generateUniqueId(),
             timestamp,
             type: 'STOCK_ADJUST',
             userName: actorName,
-            details: `Entrada de stock (${targetLabel}): +${qty} uds @ $${unitCost.toFixed(2)}. Prov: ${supplier || 'N/A'}. Nota: ${note || 'N/A'}`,
+            details: `Entrada stock (${targetLabel}): +${qty} uds @ $${unitCost.toFixed(2)}. Prov: ${supplier || 'N/A'}.${costInfo}`,
             entityType,
             entityId,
             details_raw: {
@@ -197,6 +212,8 @@ export const Inventory: React.FC = () => {
                     parentProductId: prev.id,
                     qty,
                     unitCost,
+                    oldCost,
+                    newCost: updatedCost,
                     supplier: supplier || null,
                     note: note || null,
                     warehouseId: prev.warehouseId
@@ -204,16 +221,26 @@ export const Inventory: React.FC = () => {
             }
         };
 
+        // Auditoría Global
+        executeLedgerTransaction({
+            type: 'STOCK_IN',
+            direction: 'IN',
+            amount: qty * unitCost,
+            currency: businessConfig.primaryCurrency,
+            description: `Restock: ${targetLabel} (${prev.name}) +${qty} Almacén: ${activeWarehouse.name}.`
+        });
+
         return {
             ...prev,
             stock: updatedStock,
+            cost: stockEntryTarget === 'PARENT' ? updatedCost : prev.cost,
             variants: updatedVariants,
             history: [logEntry, ...(prev.history || [])]
         };
     });
 
     setIsStockEntryModalOpen(false);
-    notify("Entrada registrada. Pulse 'Consolidar' para finalizar.", "success");
+    notify("Entrada registrada y costo ponderado actualizado.", "success");
   };
 
   const handleSaveProduct = () => {
@@ -222,13 +249,11 @@ export const Inventory: React.FC = () => {
       return;
     }
 
-    // AUDITORÍA CONSOLIDADA: Agrupación de cambios por entidad
     const diffLogs: AuditLog[] = [];
     if (originalProduct && editingProduct) {
       const actorName = currentUser?.name || 'Sistema';
       const timestamp = new Date().toISOString();
 
-      // 1. Consolidar cambios en Producto Base
       const productChanges: string[] = [];
       const productBefore: any = {};
       const productAfter: any = {};
@@ -238,7 +263,6 @@ export const Inventory: React.FC = () => {
         const valBefore = originalProduct[f];
         const valAfter = editingProduct[f];
         
-        // Comparación segura (incluyendo arrays como categories)
         if (JSON.stringify(valBefore) !== JSON.stringify(valAfter)) {
           productChanges.push(`${String(f).toUpperCase()}: ${valBefore || 'N/A'} -> ${valAfter || 'N/A'}`);
           productBefore[f] = valBefore;
@@ -259,7 +283,6 @@ export const Inventory: React.FC = () => {
         });
       }
 
-      // 2. Consolidar cambios en Variantes
       editingProduct.variants.forEach(v => {
         const oldV = originalProduct.variants.find(ov => ov.id === v.id);
         if (oldV) {
@@ -308,16 +331,10 @@ export const Inventory: React.FC = () => {
     notify("Datos consolidados", "success");
   };
 
-  // ACCIONES MASIVAS - FIX REAL
   const handleBulkDelete = () => {
     if (selectedIds.length === 0) return;
     if (!confirm(`¿Eliminar definitivamente ${selectedIds.length} productos seleccionados?`)) return;
-    
-    // Ejecutar borrado individual en bucle aprovechando el prev state del context
-    selectedIds.forEach(id => {
-      deleteProduct(id);
-    });
-    
+    selectedIds.forEach(id => { deleteProduct(id); });
     setSelectedIds([]);
     notify(`${selectedIds.length} productos eliminados`, "success");
   };
@@ -340,7 +357,6 @@ export const Inventory: React.FC = () => {
     setSelectedIds(prev => prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]);
   };
 
-  // ADICIÓN DE VARIANTE: Log descriptivo, HERENCIA DE COSTO y COLOR AUTO
   const addVariant = () => {
     if (tier === 'GOLD') { notify("Actualice a SAPPHIRE para usar variantes", "error"); return; }
     if (!editingProduct) return;
@@ -354,7 +370,7 @@ export const Inventory: React.FC = () => {
         price: editingProduct.price || 0,
         stock: 0,
         sku: '',
-        color: generateVariantColor() // ASIGNACIÓN AUTOMÁTICA DE COLOR
+        color: generateVariantColor()
     };
     
     const newLog: AuditLog = {
@@ -375,7 +391,6 @@ export const Inventory: React.FC = () => {
     }) : null);
   };
 
-  // REGLAS DE PRECIO: NO SOLAPAMIENTO (Incluyendo Fechas)
   const checkRuleOverlap = (min: number, max: number, targetId: string, currentRules: PricingRule[], startDate?: string, endDate?: string) => {
     return currentRules
       .filter(r => r.targetId === targetId && r.isActive !== false)
@@ -471,6 +486,56 @@ export const Inventory: React.FC = () => {
     notify("Regla desactivada", "success");
   };
 
+  const handleProcessMerma = () => {
+    if (!selectedWasteProduct) return;
+    const qty = parseFloat(wasteQty) || 0;
+    if (qty <= 0) { notify("Cantidad inválida", "error"); return; }
+    
+    let currentStock = 0;
+    if (wasteTargetId === 'PARENT') currentStock = selectedWasteProduct.stock || 0;
+    else currentStock = selectedWasteProduct.variants.find(v => v.id === wasteTargetId)?.stock || 0;
+
+    if (qty > currentStock) { notify("Stock insuficiente para merma", "error"); return; }
+
+    const timestamp = new Date().toISOString();
+    const actorName = currentUser?.name || 'Sistema';
+    const targetLabel = wasteTargetId === 'PARENT' ? 'Producto Base' : selectedWasteProduct.variants.find(v => v.id === wasteTargetId)?.name;
+
+    const newLog: AuditLog = {
+        id: generateUniqueId(),
+        timestamp,
+        type: 'WASTE_RECORDED',
+        userName: actorName,
+        details: `MERMA: -${qty} uds. Motivo: Baja no comercial (${targetLabel}). Stock: ${currentStock} -> ${currentStock - qty}`,
+        entityType: wasteTargetId === 'PARENT' ? 'PRODUCT' : 'VARIANT',
+        entityId: wasteTargetId === 'PARENT' ? selectedWasteProduct.id : wasteTargetId
+    };
+
+    const updatedProduct = { ...selectedWasteProduct };
+    if (wasteTargetId === 'PARENT') {
+        updatedProduct.stock -= qty;
+    } else {
+        updatedProduct.variants = updatedProduct.variants.map(v => v.id === wasteTargetId ? { ...v, stock: v.stock - qty } : v);
+    }
+    updatedProduct.history = [newLog, ...(updatedProduct.history || [])];
+
+    updateProduct(updatedProduct);
+    
+    // Auditoría Global
+    executeLedgerTransaction({
+        type: 'STOCK_WASTE',
+        direction: 'OUT',
+        amount: qty * updatedProduct.cost,
+        currency: businessConfig.primaryCurrency,
+        description: `MERMA: ${selectedWasteProduct.name} (${targetLabel}) -${qty} uds. Almacén: ${activeWarehouse.name}.`
+    });
+
+    setIsWasteModalOpen(false);
+    setSelectedWasteProduct(null);
+    setWasteQty('1');
+    notify("Merma registrada exitosamente", "success");
+  };
+
   const CategoryManagerModal = () => {
     const [expandedCat, setExpandedCat] = useState<string | null>(null);
     return (
@@ -490,7 +555,6 @@ export const Inventory: React.FC = () => {
                 return (
                   <div key={cat.id} className="bg-white rounded-3xl border border-gray-100 overflow-hidden">
                      <div className="p-5 flex items-center gap-4 group">
-                        {/* FIX COLOR PICKER: stopPropagation evita que se cierre el modal al clicar el selector nativo */}
                         <div className="w-8 h-8 rounded-full flex-shrink-0 shadow-inner cursor-pointer relative" style={{ backgroundColor: cat.color }} onClick={(e) => e.stopPropagation()}>
                             <input type="color" className="absolute inset-0 opacity-0 cursor-pointer" value={cat.color} onChange={e => updateCategory({ ...cat, color: e.target.value })} title="Cambiar color" />
                         </div>
@@ -538,7 +602,6 @@ export const Inventory: React.FC = () => {
           display: block;
         }
       `}</style>
-      {/* HEADER */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-10">
         <div>
           <h1 className="text-4xl font-black text-slate-900 tracking-tighter uppercase">Inventario</h1>
@@ -551,13 +614,16 @@ export const Inventory: React.FC = () => {
             <button onClick={() => setIsCatManagerOpen(true)} className="flex-1 md:flex-none bg-white border border-gray-200 text-slate-600 px-6 py-3 rounded-2xl font-black flex items-center justify-center gap-2 hover:bg-gray-50 transition-all uppercase text-[10px] tracking-widest shadow-sm">
                 <Layers size={16} /> Categorías
             </button>
+            {/* Fix: removed undefined setWasteItems call */}
+            <button onClick={() => { setIsWasteModalOpen(true); }} className="flex-1 md:flex-none bg-red-50 text-red-600 px-6 py-3 rounded-2xl font-black flex items-center justify-center gap-2 hover:bg-red-100 transition-all uppercase text-[10px] tracking-widest shadow-sm border border-red-100">
+                <Trash2 size={16} /> Merma
+            </button>
             <button onClick={() => setIsWhModalOpen(true)} className="flex-1 md:flex-none bg-slate-900 text-white px-6 py-3 rounded-2xl font-black flex items-center justify-center gap-2 shadow-xl hover:bg-brand-600 transition-all uppercase text-[10px] tracking-widest">
                 <Plus size={16} /> Almacén
             </button>
         </div>
       </div>
 
-      {/* TABS DE ALMACENES */}
       <div className="flex gap-2 overflow-x-auto pb-4 mb-8 scrollbar-hide border-b border-gray-100">
         {warehouses.map((w, idx) => {
           const locked = isItemLocked('WAREHOUSES', idx);
@@ -572,7 +638,6 @@ export const Inventory: React.FC = () => {
         })}
       </div>
 
-      {/* LISTADO DE PRODUCTOS */}
       <div className="bg-white rounded-[3rem] p-6 md:p-10 shadow-sm border border-gray-100 relative overflow-hidden min-h-[500px]">
         {isWhLocked && <div className="absolute inset-0 bg-white/40 backdrop-blur-[2px] z-20 flex flex-col items-center justify-center text-center p-8"><div className="bg-amber-500 text-white p-6 rounded-[2rem] mb-4 shadow-2xl animate-bounce"><Lock size={32}/></div><h3 className="text-2xl font-black text-amber-600 uppercase tracking-tighter">Acceso Restringido</h3><p className="text-xs font-bold text-amber-500 mt-2 max-w-xs uppercase">Mejore a SAPPHIRE para habilitar múltiples almacenes.</p></div>}
         
@@ -678,6 +743,107 @@ export const Inventory: React.FC = () => {
         </div>
       </div>
 
+      {/* MODAL MERMA / BAJA NO COMERCIAL */}
+      {isWasteModalOpen && (
+          <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-md flex items-center justify-center z-[200] p-4 animate-in fade-in">
+              <div className="bg-white rounded-[4rem] w-full max-w-2xl flex flex-col shadow-2xl overflow-hidden animate-in zoom-in">
+                  <div className="p-8 bg-red-600 text-white flex justify-between items-center">
+                      <h2 className="text-2xl font-black uppercase tracking-tighter flex items-center gap-3"><Trash2 size={24}/> Registrar Merma</h2>
+                      <button onClick={() => { setIsWasteModalOpen(false); setSelectedWasteProduct(null); }} className="p-3 bg-white/10 hover:bg-white/20 rounded-2xl transition-all"><X size={24}/></button>
+                  </div>
+                  
+                  <div className="p-8 space-y-6 overflow-y-auto max-h-[70vh]">
+                      {!selectedWasteProduct ? (
+                          <div className="space-y-4">
+                              <div className="relative">
+                                  <Search className="absolute left-4 top-4 text-slate-300" size={20}/>
+                                  <input 
+                                      className="w-full bg-gray-50 border-2 border-gray-100 p-4 pl-12 rounded-2xl font-bold outline-none focus:border-red-500" 
+                                      placeholder="Buscar producto..." 
+                                      value={wasteSearch} 
+                                      onChange={e => setWasteSearch(e.target.value)}
+                                  />
+                              </div>
+                              <div className="space-y-2">
+                                  {filteredProducts.filter(p => p.name.toLowerCase().includes(wasteSearch.toLowerCase())).slice(0, 5).map(p => (
+                                      <button key={p.id} onClick={() => { setSelectedWasteProduct(p); setWasteTargetId('PARENT'); }} className="w-full p-4 rounded-2xl border border-gray-100 flex items-center gap-4 hover:bg-red-50 transition-colors">
+                                          <div className="w-10 h-10 rounded-lg bg-gray-100 overflow-hidden">
+                                              {p.image ? <img src={p.image} className="w-full h-full object-cover" /> : <Package className="w-full h-full p-2 text-gray-300" />}
+                                          </div>
+                                          <div className="flex-1 text-left">
+                                              <p className="font-black text-slate-800 uppercase text-xs">{p.name}</p>
+                                              <p className="text-[9px] font-bold text-slate-400 uppercase">Stock Base: {p.stock}</p>
+                                          </div>
+                                          <ChevronRight size={16} className="text-slate-300"/>
+                                      </button>
+                                  ))}
+                              </div>
+                          </div>
+                      ) : (
+                          <div className="space-y-8 animate-in slide-in-from-right">
+                              <div className="bg-red-50 p-6 rounded-[2.5rem] flex items-center gap-6 border border-red-100">
+                                  <div className="w-20 h-20 rounded-2xl bg-white shadow-sm overflow-hidden">
+                                      {selectedWasteProduct.image ? <img src={selectedWasteProduct.image} className="w-full h-full object-cover" /> : <Package className="w-full h-full p-4 text-gray-200" />}
+                                  </div>
+                                  <div className="flex-1">
+                                      <h4 className="font-black text-red-600 uppercase text-xl tracking-tighter">{selectedWasteProduct.name}</h4>
+                                      <button onClick={() => setSelectedWasteProduct(null)} className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-1 hover:text-red-500"><X size={12}/> Cambiar Producto</button>
+                                  </div>
+                              </div>
+
+                              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                  <div className="space-y-1">
+                                      <label className="text-[10px] font-black text-gray-400 uppercase pl-2">Origen de Merma</label>
+                                      <select 
+                                          className="w-full bg-gray-50 border-none p-5 rounded-3xl font-black text-xs uppercase outline-none focus:ring-2 focus:ring-red-500"
+                                          value={wasteTargetId}
+                                          onChange={e => setWasteTargetId(e.target.value)}
+                                      >
+                                          <option value="PARENT">Producto Base ({selectedWasteProduct.stock} uds)</option>
+                                          {selectedWasteProduct.variants?.map(v => (
+                                              <option key={v.id} value={v.id}>{v.name} ({v.stock} uds)</option>
+                                          ))}
+                                      </select>
+                                  </div>
+                                  <div className="space-y-1">
+                                      <label className="text-[10px] font-black text-gray-400 uppercase pl-2">Cantidad a Descontar</label>
+                                      <input 
+                                          type="number"
+                                          className="w-full bg-gray-50 border-none p-5 rounded-3xl font-black text-2xl text-center outline-none focus:ring-2 focus:ring-red-500"
+                                          value={wasteQty}
+                                          onChange={e => setWasteQty(e.target.value)}
+                                          min={1}
+                                      />
+                                  </div>
+                              </div>
+
+                              <div className="bg-slate-900 p-8 rounded-[2.5rem] text-white flex items-center justify-between shadow-xl">
+                                  <div className="flex items-center gap-4">
+                                      <div className="p-3 bg-white/10 rounded-2xl text-red-400"><ShieldAlert size={28}/></div>
+                                      <div>
+                                          <p className="text-[9px] font-black text-brand-400 uppercase tracking-[0.2em] mb-1">Impacto Patrimonial</p>
+                                          <h5 className="text-white font-black text-xl tracking-tighter uppercase">Merma No Comercial</h5>
+                                      </div>
+                                  </div>
+                                  <div className="text-right">
+                                      <p className="text-[9px] font-bold text-slate-400 uppercase">Pérdida (Costo)</p>
+                                      <p className="text-2xl font-black text-red-400">-${( (parseFloat(wasteQty)||0) * (wasteTargetId === 'PARENT' ? selectedWasteProduct.cost : (selectedWasteProduct.variants.find(v=>v.id===wasteTargetId)?.cost || 0)) ).toFixed(2)}</p>
+                                  </div>
+                              </div>
+                          </div>
+                      )}
+                  </div>
+
+                  {selectedWasteProduct && (
+                    <div className="p-8 border-t border-gray-100 flex gap-4">
+                        <button onClick={() => setSelectedWasteProduct(null)} className="flex-1 bg-gray-100 text-slate-400 font-black py-5 rounded-3xl uppercase text-xs">Atrás</button>
+                        <button onClick={handleProcessMerma} className="flex-[2] bg-red-600 text-white font-black py-5 rounded-3xl shadow-xl hover:bg-red-700 transition-all uppercase text-xs tracking-widest">Confirmar Baja</button>
+                    </div>
+                  )}
+              </div>
+          </div>
+      )}
+
       {/* MODAL FICHA PRODUCTO */}
       {isProdModalOpen && editingProduct && (
         <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-md flex items-center justify-center z-[100] p-0 md:p-4 animate-in fade-in duration-300">
@@ -742,7 +908,7 @@ export const Inventory: React.FC = () => {
                                 <div className="space-y-1 md:col-span-2"><label className="text-[10px] font-black text-gray-400 uppercase ml-4">Nombre *</label><input className="w-full bg-white border-2 border-gray-100 p-5 rounded-3xl font-black text-slate-800 text-lg outline-none focus:border-brand-500" value={editingProduct.name} onChange={e => setEditingProduct(prev => prev ? ({...prev, name: e.target.value}) : null)} placeholder="Ej: Café Serrano" /></div>
                                 <div className="space-y-1 relative"><label className="text-[10px] font-black text-gray-400 uppercase ml-4">SKU / Barcode</label><div className="relative"><input className="w-full bg-white border-2 border-gray-100 p-5 pr-14 rounded-3xl font-bold outline-none uppercase" value={editingProduct.sku} onChange={e => setEditingProduct(prev => prev ? ({...prev, sku: e.target.value}) : null)} placeholder="Escanear..." /><button onClick={() => setShowScannerStub(true)} className="absolute right-4 top-4 text-brand-500"><Barcode size={24}/></button></div></div>
                                 <div className="space-y-1"><label className="text-[10px] font-black text-gray-400 uppercase ml-4">Vencimiento</label><div className="relative"><Calendar className="absolute left-5 top-5 text-gray-300" size={20}/><input type="date" className="w-full bg-white border-2 border-gray-100 p-5 pl-14 rounded-3xl font-bold outline-none" value={editingProduct.expiryDate} onChange={e => setEditingProduct(prev => prev ? ({...prev, expiryDate: e.target.value}) : null)} /></div></div>
-                                <div className="space-y-1"><label className="text-[10px] font-black text-gray-400 uppercase ml-4">Costo *</label><div className="relative"><DollarSign className="absolute left-5 top-5 text-gray-300" size={20}/><input type="number" className="w-full bg-white border-2 border-gray-100 p-5 pl-14 rounded-3xl font-black text-xl" value={editingProduct.cost} onChange={e => setEditingProduct(prev => prev ? ({...prev, cost: parseFloat(e.target.value) || 0}) : null)} /></div></div>
+                                <div className="space-y-1"><label className="text-[10px] font-black text-gray-400 uppercase ml-4">Costo Ponderado</label><div className="relative"><DollarSign className="absolute left-5 top-5 text-gray-300" size={20}/><input type="number" readOnly className="w-full bg-gray-100 border-2 border-gray-100 p-5 pl-14 rounded-3xl font-black text-xl text-slate-500 cursor-not-allowed" value={editingProduct.cost} /></div></div>
                                 <div className="space-y-1"><label className="text-[10px] font-black text-gray-400 uppercase ml-4">Venta *</label><div className="relative"><DollarSign className="absolute left-5 top-5 text-brand-300" size={20}/><input type="number" className="w-full bg-white border-2 border-gray-100 p-5 pl-14 rounded-3xl font-black text-xl text-brand-600" value={editingProduct.price} onChange={e => setEditingProduct(prev => prev ? ({...prev, price: parseFloat(e.target.value) || 0}) : null)} /></div></div>
                                 
                                 <div className="md:col-span-2 bg-slate-900 p-6 rounded-[2.5rem] flex items-center justify-between border-b-4 border-brand-500 shadow-xl">
@@ -805,8 +971,8 @@ export const Inventory: React.FC = () => {
                                     <input className="bg-gray-50 p-3 rounded-xl font-bold text-xs" placeholder="SKU" value={v.sku} onChange={e => setEditingProduct(prev => prev ? ({...prev, variants: prev.variants.map((vr, idx) => idx === i ? {...vr, sku: e.target.value} : vr)}) : null)} />
                                   </div>
                                   <div className="flex flex-col gap-1">
-                                    <label className="text-[8px] font-black text-slate-400 uppercase px-1">Costo</label>
-                                    <input type="number" className="bg-gray-50 p-3 rounded-xl font-black text-xs text-slate-600" value={v.cost} onChange={e => setEditingProduct(prev => prev ? ({...prev, variants: prev.variants.map((vr, idx) => idx === i ? {...vr, cost: parseFloat(e.target.value) || 0} : vr)}) : null)} />
+                                    <label className="text-[8px] font-black text-slate-400 uppercase px-1">Costo Pond.</label>
+                                    <input type="number" readOnly className="bg-gray-100 p-3 rounded-xl font-black text-xs text-slate-500 cursor-not-allowed" value={v.cost} />
                                   </div>
                                   <div className="flex flex-col gap-1">
                                     <label className="text-[8px] font-black text-brand-400 uppercase px-1">Venta</label>
@@ -936,7 +1102,7 @@ export const Inventory: React.FC = () => {
                         <h3 className="text-xl font-black text-slate-800 uppercase mb-6 tracking-tighter">Historial de Auditoría</h3>
                         {editingProduct.history?.map(log => (
                             <div key={log.id} className="bg-white p-5 rounded-3xl border border-gray-100 flex items-start gap-4 shadow-sm">
-                                <div className={`p-3 rounded-xl ${log.type === 'CREATED' ? 'bg-emerald-50 text-emerald-600' : log.type === 'STOCK_ADJUST' ? 'bg-amber-50 text-amber-600' : 'bg-blue-50 text-blue-600'}`}>
+                                <div className={`p-3 rounded-xl ${log.type === 'CREATED' ? 'bg-emerald-50 text-emerald-600' : log.type === 'STOCK_ADJUST' ? 'bg-amber-50 text-amber-600' : log.type === 'WASTE_RECORDED' ? 'bg-red-50 text-red-600' : 'bg-blue-50 text-blue-600'}`}>
                                     {log.type === 'STOCK_ADJUST' ? <Truck size={20}/> : <Info size={20}/>}
                                 </div>
                                 <div className="flex-1">
@@ -951,7 +1117,6 @@ export const Inventory: React.FC = () => {
             </div>
 
             <div className="p-4 md:p-8 bg-white border-t border-gray-100 flex flex-row justify-between items-center gap-2 flex-shrink-0">
-                {/* BOTÓN ELIMINAR FICHA: Fix para asegurar cierre y borrado real */}
                 <button onClick={() => { if(confirm('¿Eliminar producto definitivamente?')) { deleteProduct(editingProduct.id); setIsProdModalOpen(false); setEditingProduct(null); notify("Producto eliminado con éxito", "success"); } }} className="flex-1 md:flex-none px-4 md:px-8 py-3 md:py-5 bg-red-50 text-red-500 rounded-[2rem] font-black text-[8px] md:text-[10px] uppercase tracking-widest hover:bg-red-500 hover:text-white transition-all">Eliminar</button>
                 <div className="flex flex-row gap-2 flex-1 md:flex-none justify-end">
                     <button onClick={() => setIsProdModalOpen(false)} className="flex-1 md:flex-none px-4 md:px-8 py-3 md:py-5 bg-gray-100 text-slate-400 rounded-[2rem] font-black text-[8px] md:text-[10px] uppercase tracking-widest">Cerrar</button>
@@ -962,7 +1127,6 @@ export const Inventory: React.FC = () => {
         </div>
       )}
 
-      {/* MODAL ENTRADA DE STOCK (NUEVO) */}
       {isStockEntryModalOpen && editingProduct && (
         <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-md flex items-center justify-center z-[250] p-4 animate-in fade-in">
           <div className="bg-white rounded-[3rem] p-8 w-full max-w-lg shadow-2xl animate-in zoom-in space-y-6">
@@ -1033,10 +1197,8 @@ export const Inventory: React.FC = () => {
         </div>
       )}
 
-      {/* MODAL GESTOR CATEGORÍAS */}
       {isCatManagerOpen && <CategoryManagerModal />}
 
-      {/* MODAL SCANNER STUB (MANTENIDO) */}
       {showScannerStub && (
           <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-xl z-[200] flex items-center justify-center p-4 animate-in zoom-in">
               <div className="bg-white p-12 rounded-[3.5rem] w-full max-sm text-center shadow-2xl">
@@ -1048,7 +1210,6 @@ export const Inventory: React.FC = () => {
           </div>
       )}
 
-      {/* MODAL NUEVO ALMACÉN (MANTENIDO) */}
       {isWhModalOpen && (
         <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-md flex items-center justify-center z-[100] p-4">
           <div className="bg-white rounded-[3rem] p-12 w-full max-md shadow-2xl animate-in zoom-in">
