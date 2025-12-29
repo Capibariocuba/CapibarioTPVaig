@@ -1,3 +1,4 @@
+
 import React, { useState, useMemo, useEffect } from 'react';
 import { useStore } from '../context/StoreContext';
 import { Currency, View, Role, Product, Sale, Shift, User } from '../types';
@@ -138,7 +139,7 @@ export const ShiftManager: React.FC<{ onOpen?: () => void }> = ({ onOpen }) => {
         const refundedV = turnSales.reduce((acc, sale) => {
             const itemRefunded = sale.refunds?.filter(r => new Date(r.timestamp).getTime() >= startTime && new Date(r.timestamp).getTime() <= endTime)
                 .reduce((rAcc, r) => rAcc + (r.items.find(ri => ri.cartId === vKey)?.qty || 0), 0) || 0;
-            return acc + itemRefunded;
+            return rAcc + itemRefunded;
         }, 0);
 
         const netSoldV = soldV - refundedV;
@@ -263,7 +264,8 @@ export const ShiftManager: React.FC<{ onOpen?: () => void }> = ({ onOpen }) => {
         <div style="font-size: 8pt;">
             <div style="display:flex; justify-content: space-between;"><span>EN CAJA:</span><span>$${formatNum(s.refundsIn)}</span></div>
             <div style="display:flex; justify-content: space-between;"><span>FUERA CAJA:</span><span>$${formatNum(s.refundsOut)}</span></div>
-            <div style="display:flex; justify-content: space-between; font-weight:bold; margin-top:1mm;"><span>TOTAL DEV.:</span><span>$${formatNum(s.refundsIn + s.refundsOut)}</span></div>
+            <!-- Fix: Explicit Number cast to avoid errors on any/unknown types -->
+            <div style="display:flex; justify-content: space-between; font-weight:bold; margin-top:1mm;"><span>TOTAL DEV.:</span><span>$${formatNum((Number(s.refundsIn) || 0) + (Number(s.refundsOut) || 0))}</span></div>
         </div>
 
         <div style="border-bottom: 1px solid #000; margin: 3mm 0 2mm 0;"></div>
@@ -272,7 +274,8 @@ export const ShiftManager: React.FC<{ onOpen?: () => void }> = ({ onOpen }) => {
             <div style="display:flex; justify-content: space-between;"><span>CUPONES:</span><span>$${formatNum(s.couponDisc)}</span></div>
             <div style="display:flex; justify-content: space-between;"><span>BOGO:</span><span>$${formatNum(s.bogoDisc)}</span></div>
             <div style="display:flex; justify-content: space-between;"><span>APPS BOGO:</span><span>${s.bogoApps}</span></div>
-            <div style="display:flex; justify-content: space-between; font-weight:bold; margin-top:1mm;"><span>TOTAL DESC.:</span><span>$${formatNum(s.couponDisc + s.bogoDisc)}</span></div>
+            <!-- Fix: Explicit Number cast to avoid errors on any/unknown types -->
+            <div style="display:flex; justify-content: space-between; font-weight:bold; margin-top:1mm;"><span>TOTAL DESC.:</span><span>$${formatNum((Number(s.couponDisc) || 0) + (Number(s.bogoDisc) || 0))}</span></div>
         </div>
 
         <div style="border-bottom: 1px solid #000; margin: 3mm 0 2mm 0;"></div>
