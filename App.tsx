@@ -9,7 +9,7 @@ import { Clients } from './pages/Clients';
 import { Configuration } from './pages/Configuration';
 import { Ledger } from './pages/Ledger';
 import { Employees } from './pages/Employees';
-import { View } from './types';
+import { View, Role } from './types';
 import { Key, Cpu, Globe, MessageCircle, AlertCircle, Menu } from 'lucide-react';
 import { CAPIBARIO_LOGO } from './constants';
 
@@ -106,7 +106,7 @@ const ActivationScreen: React.FC = () => {
 };
 
 const MainLayout: React.FC = () => {
-  const { view, setView, isLicenseValid, users } = useStore();
+  const { view, setView, isLicenseValid, employees } = useStore();
   
   const [sidebarPinned, setSidebarPinned] = useState(() => localStorage.getItem('_sidebar_pinned') === 'true');
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -115,13 +115,17 @@ const MainLayout: React.FC = () => {
     localStorage.setItem('_sidebar_pinned', String(sidebarPinned));
   }, [sidebarPinned]);
 
+  // Setup Gate: Si no hay administrador en empleados, forzar vista empleados
   useEffect(() => {
-    if (isLicenseValid && users.length === 0 && view !== View.CONFIGURATION) {
-      setView(View.CONFIGURATION);
+    const hasAdmin = employees.some((e: any) => e.role === Role.ADMIN);
+    if (isLicenseValid && !hasAdmin && view !== View.EMPLOYEES) {
+      setView(View.EMPLOYEES);
     }
-  }, [isLicenseValid, users.length, view]);
+  }, [isLicenseValid, employees, view, setView]);
 
   if (!isLicenseValid) return <ActivationScreen />;
+
+  const hasAdmin = employees.some((e: any) => e.role === Role.ADMIN);
 
   const renderContent = () => {
     switch (view) {
@@ -138,6 +142,7 @@ const MainLayout: React.FC = () => {
 
   return (
     <div className="flex h-screen w-screen overflow-hidden bg-gray-50">
+      {/* El sidebar se muestra pero sus items están bloqueados por roles si currentUser es null */}
       <Sidebar 
         isPinned={sidebarPinned} 
         isOpen={sidebarOpen} 
@@ -146,7 +151,8 @@ const MainLayout: React.FC = () => {
       />
       
       <main className="flex-1 h-full overflow-hidden relative">
-        {!sidebarPinned && !sidebarOpen && (
+        {/* Bloquear botón de hamburguesa si no hay admin para evitar ruidos visuales */}
+        {!sidebarPinned && !sidebarOpen && hasAdmin && (
           <button 
             onClick={() => setSidebarOpen(true)}
             className="fixed top-6 left-6 z-40 bg-white p-3 rounded-2xl shadow-xl border border-gray-100 text-slate-600 hover:text-brand-500 transition-all active:scale-95 lg:flex hidden"

@@ -19,7 +19,7 @@ export const Configuration: React.FC = () => {
 
   const [isAuthenticated, setIsAuthenticated] = useState(users.length === 0);
   const [pinInput, setPinInput] = useState('');
-  const [activeTab, setActiveTab] = useState<'BUSINESS' | 'USERS' | 'FINANCE' | 'LICENSE'>('USERS');
+  const [activeTab, setActiveTab] = useState<'BUSINESS' | 'FINANCE' | 'LICENSE' | 'USERS'>('BUSINESS');
 
   // Lógica de Rescate
   const [isRescueMode, setIsRescueMode] = useState(() => localStorage.getItem('cfg_rescue_mode') === 'true');
@@ -271,23 +271,29 @@ export const Configuration: React.FC = () => {
 
       <div className="flex gap-2 mb-10 bg-white p-2 rounded-3xl shadow-sm border border-gray-100 overflow-x-auto scrollbar-hide">
         {[
-          { id: 'USERS', label: 'Operadores', icon: UserIcon },
           { id: 'BUSINESS', label: 'Empresa', icon: Building2 },
           { id: 'FINANCE', label: 'Finanzas', icon: DollarSign },
           { id: 'LICENSE', label: 'Licencia', icon: ShieldCheck }
         ].map(tab => (
           <button 
             key={tab.id} 
-            disabled={isRescueMode && tab.id !== 'USERS'}
+            disabled={isRescueMode}
             onClick={() => !isRescueMode && setActiveTab(tab.id as any)} 
-            className={`flex-1 flex items-center justify-center gap-3 py-4 px-6 rounded-2xl font-black text-[10px] uppercase tracking-widest transition-all ${activeTab === tab.id ? 'bg-slate-900 text-white shadow-lg' : 'text-slate-400 hover:bg-gray-50'} ${(isRescueMode && tab.id !== 'USERS') ? 'opacity-30 cursor-not-allowed' : ''}`}
+            className={`flex-1 flex items-center justify-center gap-3 py-4 px-6 rounded-2xl font-black text-[10px] uppercase tracking-widest transition-all ${activeTab === tab.id ? 'bg-slate-900 text-white shadow-lg' : 'text-slate-400 hover:bg-gray-50'} ${isRescueMode ? 'opacity-30 cursor-not-allowed' : ''}`}
           >
             <tab.icon size={16} /> {tab.label}
           </button>
         ))}
+        {isRescueMode && (
+          <button 
+            className="flex-1 flex items-center justify-center gap-3 py-4 px-6 rounded-2xl font-black text-[10px] uppercase tracking-widest transition-all bg-red-600 text-white shadow-lg"
+          >
+            <UserIcon size={16} /> MODO RESCATE
+          </button>
+        )}
       </div>
 
-      {activeTab === 'BUSINESS' && (
+      {activeTab === 'BUSINESS' && !isRescueMode && (
         <div className="space-y-8 animate-in slide-in-from-bottom-6">
           {/* A. INFORMACIÓN GENERAL */}
           <section className="bg-white p-10 rounded-[3rem] shadow-sm border border-gray-100">
@@ -299,7 +305,7 @@ export const Configuration: React.FC = () => {
               <div className="flex flex-col items-center">
                 <div 
                   onClick={() => logoInputRef.current?.click()}
-                  className={`w-48 h-48 rounded-[2.5rem] border-4 border-dashed cursor-pointer flex items-center justify-center overflow-hidden transition-all group relative ${tempBiz.logo ? 'border-brand-500' : 'border-gray-200 bg-gray-50'}`}
+                  className={`w-48 h-48 rounded-[2.5rem] border-4 border-dashed border-gray-200 flex items-center justify-center overflow-hidden transition-all group relative ${tempBiz.logo ? 'border-brand-500 bg-white shadow-inner' : 'bg-gray-50'}`}
                 >
                   {tempBiz.logo ? (
                     <>
@@ -484,7 +490,7 @@ export const Configuration: React.FC = () => {
         </div>
       )}
 
-      {activeTab === 'FINANCE' && (
+      {activeTab === 'FINANCE' && !isRescueMode && (
         <div className="space-y-10 animate-in slide-in-from-bottom-6">
           {/* DIVISAS AVANZADAS */}
           <section className="bg-white p-6 md:p-10 rounded-[3rem] shadow-sm border border-gray-100">
@@ -632,7 +638,7 @@ export const Configuration: React.FC = () => {
       {/* MODAL AÑADIR DIVISA */}
       {showAddCurrencyModal && (
         <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-md flex items-center justify-center z-[200] p-4">
-           <div className="bg-white rounded-[3rem] p-10 w-full max-w-lg shadow-2xl animate-in zoom-in">
+           <div className="bg-white rounded-[3rem] p-10 w-full max-lg shadow-2xl animate-in zoom-in">
               <div className="flex justify-between items-center mb-8">
                 <h3 className="text-2xl font-black text-slate-900 uppercase tracking-tighter">Nueva Divisa</h3>
                 <button onClick={() => setShowAddCurrencyModal(false)} className="p-3 bg-gray-100 hover:bg-gray-200 rounded-2xl transition-all"><X size={20}/></button>
@@ -706,93 +712,19 @@ export const Configuration: React.FC = () => {
         </div>
       )}
 
-      {activeTab === 'USERS' && (
-        <div className="space-y-6">
-          <div className="bg-white p-8 rounded-[2.5rem] shadow-sm border border-gray-100 flex justify-between items-center">
-            <div>
-              <h3 className="text-xl font-black text-slate-800 uppercase tracking-tighter">Gestión de Personal</h3>
-              <p className="text-[10px] font-bold text-slate-400 uppercase">Plan {tier}: Máximo {tier === 'GOLD' ? '3' : tier === 'SAPPHIRE' ? '15' : 'Ilimitados'} operadores</p>
-            </div>
-            <button disabled={isRescueMode} onClick={() => !isRescueMode && setIsAddingUser(true)} className={`bg-slate-900 text-white px-6 py-3 rounded-xl font-black text-[10px] uppercase tracking-widest flex items-center gap-2 hover:bg-brand-600 transition-all ${isRescueMode ? 'opacity-30 cursor-not-allowed' : ''}`}>
-              <Plus size={16} /> Nuevo Operador
-            </button>
-          </div>
-
-          {isAddingUser && !isRescueMode && (
-            <div className="bg-white p-8 rounded-[2rem] border-2 border-brand-500 shadow-xl animate-in zoom-in">
-              <h4 className="text-xs font-black uppercase mb-4 text-slate-500">Nuevo Registro</h4>
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                <input className="p-4 bg-gray-50 rounded-xl font-bold text-sm" placeholder="Nombre" onChange={e => setNewUser({...newUser, name: e.target.value})} />
-                <input className="p-4 bg-gray-50 rounded-xl font-black text-center tracking-widest" maxLength={4} placeholder="PIN" onChange={e => setNewUser({...newUser, pin: e.target.value})} />
-                <select className="p-4 bg-gray-50 rounded-xl font-bold text-xs uppercase" value={newUser.role} onChange={e => setNewUser({...newUser, role: e.target.value as Role})}>
-                  {Object.values(Role).map(r => <option key={r} value={r}>{r}</option>)}
-                </select>
-                <div className="flex gap-2">
-                  <button onClick={async () => { 
-                    if (!newUser.name || !newUser.pin) return;
-                    await addUser({ ...newUser, id: Date.now().toString() } as User); 
-                    setIsAddingUser(false); 
-                  }} className="flex-1 bg-slate-900 text-white rounded-xl font-black text-[10px] uppercase">Guardar</button>
-                  <button onClick={() => setIsAddingUser(false)} className="px-4 bg-gray-100 text-gray-400 rounded-xl font-black">X</button>
-                </div>
-              </div>
-            </div>
-          )}
-
-          <div className="bg-white rounded-[2.5rem] shadow-sm border border-gray-100 overflow-hidden">
-            <table className="w-full text-left">
-              <thead className="bg-gray-50 text-[10px] font-black uppercase text-gray-400 border-b">
-                <tr><th className="p-6">Operador</th><th className="p-6 text-center">Rol</th><th className="p-6 text-center">Estado</th><th className="p-6 text-right">Acciones</th></tr>
-              </thead>
-              <tbody className="divide-y">
-                {users.map((u, index) => {
-                  const locked = isItemLocked('OPERATORS', index);
-                  return (
-                    <tr key={u.id} className={`transition-colors ${locked ? 'bg-amber-50/20' : 'hover:bg-slate-50/50'}`}>
-                      <td className="p-6">
-                        <div className="flex items-center gap-4">
-                          <div className={`w-10 h-10 rounded-xl flex items-center justify-center font-black ${locked ? 'bg-amber-100 text-amber-600' : 'bg-slate-900 text-white'}`}>
-                            {u.name?.charAt(0) || '?'}
-                          </div>
-                          <span className="font-bold text-slate-800 uppercase tracking-tighter">{u.name}</span>
-                        </div>
-                      </td>
-                      <td className="p-6 text-center text-[10px] font-black uppercase text-slate-400">{u.role}</td>
-                      <td className="p-6 text-center">
-                        {locked ? 
-                          <span className="text-amber-500 font-black text-[9px] uppercase bg-amber-50 px-3 py-1 rounded-full">Exceso Límite</span> : 
-                          <span className="text-emerald-500 font-black text-[9px] uppercase bg-emerald-50 px-3 py-1 rounded-full">Activo</span>
-                        }
-                      </td>
-                      <td className="p-6 text-right">
-                        {!locked && (
-                          <div className="flex justify-end gap-2">
-                            <button onClick={() => { setEditingPinUser(u.id); setNewPinValue(''); }} className="p-3 text-slate-400 hover:text-brand-600 bg-gray-50 rounded-xl transition-all" title="Cambiar PIN"><Key size={18} /></button>
-                            {users.length > 1 && !isRescueMode && (
-                              <button onClick={() => { if(confirm('¿Eliminar operador?')) deleteUser(u.id); }} className="p-3 text-red-300 hover:text-red-500 bg-red-50/50 rounded-xl transition-all"><Trash2 size={18} /></button>
-                            )}
-                          </div>
-                        )}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
-
+      {/* MODO RESCATE / GESTIÓN DE PIN */}
       {editingPinUser && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[200] p-4">
-          <div className="bg-white p-10 rounded-[2.5rem] shadow-2xl max-sm w-full text-center">
+          <div className="bg-white p-10 rounded-[2.5rem] shadow-2xl max-sm w-full text-center animate-in zoom-in">
             <h3 className="text-xl font-black mb-6 uppercase tracking-tighter">Actualizar PIN</h3>
+            <p className="text-[10px] text-slate-400 font-bold uppercase mb-4 tracking-widest">
+              {isRescueMode ? "RESTABLECIENDO ADMINISTRADOR" : "CONFIGURACIÓN SEGURA"}
+            </p>
             <input type="password" autoFocus value={newPinValue} onChange={e => setNewPinValue(e.target.value)} className="w-full text-center text-4xl border-none bg-gray-100 rounded-2xl py-6 mb-8 font-black text-slate-800 outline-none" maxLength={4} placeholder="••••" />
             <div className="flex gap-4">
               <button onClick={async () => { 
                 if (editingPinUser && newPinValue.length === 4) { 
                   try {
-                    // Verificamos que la función sea realmente una función antes de llamarla
                     if (typeof updateUserPin === 'function') {
                         await updateUserPin(editingPinUser, newPinValue); 
                         setEditingPinUser(null); 
@@ -815,13 +747,13 @@ export const Configuration: React.FC = () => {
                   }
                 } 
               }} className="flex-1 bg-slate-900 text-white font-black py-4 rounded-xl uppercase text-xs">Confirmar</button>
-              <button onClick={() => !isRescueMode && setEditingPinUser(null)} disabled={isRescueMode} className={`flex-1 bg-gray-100 text-slate-400 font-black py-4 rounded-xl uppercase text-xs ${isRescueMode ? 'opacity-30 cursor-not-allowed' : ''}`}>Cancelar</button>
+              {!isRescueMode && <button onClick={() => setEditingPinUser(null)} className="flex-1 bg-gray-100 text-slate-400 font-black py-4 rounded-xl uppercase text-xs">Cancelar</button>}
             </div>
           </div>
         </div>
       )}
 
-      {activeTab === 'LICENSE' && (
+      {activeTab === 'LICENSE' && !isRescueMode && (
         <div className="space-y-12 animate-in zoom-in">
           <div className="max-w-xl mx-auto text-center space-y-8 bg-white p-16 rounded-[4rem] shadow-sm border border-gray-100">
             <Crown size={80} className="text-brand-500 mx-auto" />
