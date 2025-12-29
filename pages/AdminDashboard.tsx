@@ -1,10 +1,11 @@
+
 import React, { useMemo } from 'react';
 import { useStore } from '../context/StoreContext';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line } from 'recharts';
-import { TrendingUp, DollarSign, Package, AlertTriangle } from 'lucide-react';
+import { TrendingUp, DollarSign, Package, AlertTriangle, Trash2 } from 'lucide-react';
 
 export const AdminDashboard: React.FC = () => {
-  const { sales, products } = useStore();
+  const { sales, products, ledger } = useStore();
 
   const totalSales = sales.reduce((acc, sale) => acc + sale.total, 0);
   const totalOrders = sales.length;
@@ -12,11 +13,18 @@ export const AdminDashboard: React.FC = () => {
   const productsWithStock = useMemo(() => {
     return products.map(p => ({
       ...p,
-      stock: p.batches ? p.batches.reduce((acc, b) => acc + b.quantity, 0) : 0
+      stock: (p.stock || 0) + (p.variants?.reduce((acc, v) => acc + (v.stock || 0), 0) || 0)
     }));
   }, [products]);
 
   const lowStockProducts = productsWithStock.filter(p => !p.isService && p.stock < p.minStockAlert).length;
+
+  // Cálculo de Pérdida por merma no comercial desde el Ledger
+  const totalWasteLoss = useMemo(() => {
+    return ledger
+      .filter(e => e.type === 'STOCK_WASTE')
+      .reduce((acc, e) => acc + e.amount, 0);
+  }, [ledger]);
 
   // Process data for charts
   const salesData = sales.map(sale => ({
@@ -44,13 +52,20 @@ export const AdminDashboard: React.FC = () => {
         <p className="text-gray-500">Resumen general del negocio</p>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-6 mb-8">
         <StatCard 
           title="Ventas Totales (Día)" 
           value={`${totalSales.toLocaleString()} CUP`} 
           sub="+12% vs ayer"
           icon={DollarSign}
           color="bg-emerald-500"
+        />
+        <StatCard 
+          title="Pérdida por merma no comercial" 
+          value={`${totalWasteLoss.toLocaleString()} CUP`} 
+          sub="Valor de inventario dado de baja"
+          icon={Trash2}
+          color="bg-red-500"
         />
         <StatCard 
           title="Transacciones" 

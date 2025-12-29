@@ -521,13 +521,14 @@ export const Inventory: React.FC = () => {
 
     updateProduct(updatedProduct);
     
-    // Auditoría Global
+    // Auditoría Global - SE USA paymentMethod 'NONE' PARA NO AFECTAR LA CAJA
     executeLedgerTransaction({
         type: 'STOCK_WASTE',
         direction: 'OUT',
-        amount: qty * updatedProduct.cost,
+        amount: qty * (wasteTargetId === 'PARENT' ? selectedWasteProduct.cost : (selectedWasteProduct.variants.find(v=>v.id===wasteTargetId)?.cost || 0)),
         currency: businessConfig.primaryCurrency,
-        description: `MERMA: ${selectedWasteProduct.name} (${targetLabel}) -${qty} uds. Almacén: ${activeWarehouse.name}.`
+        description: `Pérdida por merma no comercial: ${selectedWasteProduct.name} (${targetLabel}) -${qty} uds. Almacén: ${activeWarehouse.name}.`,
+        paymentMethod: 'NONE'
     });
 
     setIsWasteModalOpen(false);
@@ -614,7 +615,6 @@ export const Inventory: React.FC = () => {
             <button onClick={() => setIsCatManagerOpen(true)} className="flex-1 md:flex-none bg-white border border-gray-200 text-slate-600 px-6 py-3 rounded-2xl font-black flex items-center justify-center gap-2 hover:bg-gray-50 transition-all uppercase text-[10px] tracking-widest shadow-sm">
                 <Layers size={16} /> Categorías
             </button>
-            {/* Fix: removed undefined setWasteItems call */}
             <button onClick={() => { setIsWasteModalOpen(true); }} className="flex-1 md:flex-none bg-red-50 text-red-600 px-6 py-3 rounded-2xl font-black flex items-center justify-center gap-2 hover:bg-red-100 transition-all uppercase text-[10px] tracking-widest shadow-sm border border-red-100">
                 <Trash2 size={16} /> Merma
             </button>

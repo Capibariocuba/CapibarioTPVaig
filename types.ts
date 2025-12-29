@@ -22,7 +22,7 @@ export enum Role {
   DEPENDENT = 'VENDEDOR'
 }
 
-export type PaymentMethodType = 'CASH' | 'TRANSFER' | 'CARD' | 'CRYPTO' | 'TROPIPAY' | 'QVAPAY' | 'CREDIT';
+export type PaymentMethodType = 'CASH' | 'TRANSFER' | 'CARD' | 'CRYPTO' | 'TROPIPAY' | 'QVAPAY' | 'CREDIT' | 'NONE';
 
 export interface PaymentMethodConfig {
   id: PaymentMethodType;
