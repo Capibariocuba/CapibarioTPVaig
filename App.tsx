@@ -9,6 +9,7 @@ import { Clients } from './pages/Clients';
 import { Configuration } from './pages/Configuration';
 import { Ledger } from './pages/Ledger';
 import { Employees } from './pages/Employees';
+import { WebCatalogView } from './pages/WebCatalogView';
 import { View, Role } from './types';
 import { Key, Cpu, Globe, MessageCircle, AlertCircle, Menu } from 'lucide-react';
 import { CAPIBARIO_LOGO } from './constants';
@@ -118,12 +119,17 @@ const MainLayout: React.FC = () => {
   // Setup Gate: Si no hay administrador en empleados, forzar vista empleados
   useEffect(() => {
     const hasAdmin = employees.some((e: any) => e.role === Role.ADMIN);
-    if (isLicenseValid && !hasAdmin && view !== View.EMPLOYEES) {
+    if (isLicenseValid && !hasAdmin && view !== View.EMPLOYEES && view !== View.WEB_CATALOG) {
       setView(View.EMPLOYEES);
     }
   }, [isLicenseValid, employees, view, setView]);
 
   if (!isLicenseValid) return <ActivationScreen />;
+
+  // Caso especial: Catálogo Web Local no requiere Sidebar ni autenticación POS
+  if (view === View.WEB_CATALOG) {
+      return <WebCatalogView />;
+  }
 
   const hasAdmin = employees.some((e: any) => e.role === Role.ADMIN);
 

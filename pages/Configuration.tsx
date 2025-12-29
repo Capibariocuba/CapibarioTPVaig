@@ -1,12 +1,13 @@
 
 import React, { useState, useRef, useMemo, useEffect } from 'react';
 import { useStore } from '../context/StoreContext';
-import { Role, User, BusinessConfig, CurrencyConfig, PaymentMethodType, LicenseTier, Currency, POSStoreTerminal } from '../types';
+import { Role, User, BusinessConfig, CurrencyConfig, PaymentMethodType, LicenseTier, Currency, POSStoreTerminal, View } from '../types';
+/* Added missing Info icon to lucide-react imports */
 import { 
   Lock, Building2, User as UserIcon, DollarSign, ShieldCheck, 
   Save, Plus, Trash2, Key, Crown, Printer, Barcode, CreditCard, 
   Phone, Mail, MapPin, Hash, Receipt, AlertCircle, Banknote, Globe, Wallet, Camera, Monitor, LogIn, LogOut, CheckSquare, Square, X,
-  ArrowRight, Sparkles, Cloud, Zap
+  ArrowRight, Sparkles, Cloud, Zap, ExternalLink, Copy, Info
 } from 'lucide-react';
 
 export const Configuration: React.FC = () => {
@@ -14,7 +15,7 @@ export const Configuration: React.FC = () => {
     users, addUser, deleteUser, updateUserPin,
     businessConfig, updateBusinessConfig, 
     currencies, updateCurrency, addCurrency, deleteCurrency, isItemLocked, applyLicenseKey,
-    login, currentUser, logout, notify, warehouses
+    login, currentUser, logout, notify, warehouses, setView
   } = useStore();
 
   const [isAuthenticated, setIsAuthenticated] = useState(users.length === 0);
@@ -255,6 +256,8 @@ export const Configuration: React.FC = () => {
     );
   }
 
+  const catalogUrl = `${window.location.origin}/#/catalog`;
+
   return (
     <div className="p-8 bg-gray-50 h-full overflow-y-auto animate-in fade-in duration-500">
       <div className="flex items-center justify-between mb-10">
@@ -358,6 +361,54 @@ export const Configuration: React.FC = () => {
                 </div>
               </div>
             </div>
+          </section>
+
+          {/* CATALOGO WEB LOCAL SECTION */}
+          <section className="bg-white p-10 rounded-[3rem] shadow-sm border border-gray-100">
+            <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-8">
+               <div>
+                  <h3 className="text-2xl font-black text-slate-800 uppercase tracking-tighter flex items-center gap-3">
+                    <Globe className="text-brand-500" /> Catálogo Web Local (LAN)
+                  </h3>
+                  <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-1">Comparte tus productos con clientes en tu misma red Wi-Fi</p>
+               </div>
+               <button 
+                  onClick={() => setTempBiz({ ...tempBiz, isWebCatalogActive: !tempBiz.isWebCatalogActive })}
+                  className={`px-8 py-3 rounded-2xl font-black text-[10px] uppercase tracking-widest transition-all shadow-lg ${tempBiz.isWebCatalogActive ? 'bg-emerald-500 text-white' : 'bg-slate-200 text-slate-500'}`}
+               >
+                  {tempBiz.isWebCatalogActive ? 'SERVIDOR ACTIVO' : 'ACTIVAR SERVIDOR'}
+               </button>
+            </div>
+
+            {tempBiz.isWebCatalogActive ? (
+              <div className="bg-emerald-50 border-2 border-emerald-100 p-8 rounded-[2.5rem] animate-in slide-in-from-top-4 duration-500">
+                  <div className="flex flex-col md:flex-row items-center gap-8">
+                      <div className="bg-white p-4 rounded-[2rem] shadow-xl text-emerald-600">
+                          <Zap size={40} className="animate-pulse" />
+                      </div>
+                      <div className="flex-1 text-center md:text-left">
+                          <p className="text-[10px] font-black text-emerald-600 uppercase tracking-widest mb-1">Estatus: Servidor levantado en puerto {tempBiz.webCatalogPort || 8088}</p>
+                          <h4 className="text-xl font-black text-slate-800 tracking-tight mb-3">Enlace de acceso local:</h4>
+                          <div className="flex items-center gap-2 bg-white/60 p-3 rounded-xl border border-emerald-200">
+                              <code className="text-xs font-black text-slate-700 select-all flex-1">{catalogUrl}</code>
+                              <button onClick={() => { navigator.clipboard.writeText(catalogUrl); notify("Copiado al portapapeles", "success"); }} className="p-2 text-emerald-600 hover:bg-emerald-100 rounded-lg transition-colors"><Copy size={16}/></button>
+                              <button onClick={() => setView(View.WEB_CATALOG)} className="p-2 text-brand-600 hover:bg-brand-100 rounded-lg transition-colors"><ExternalLink size={16}/></button>
+                          </div>
+                      </div>
+                  </div>
+                  <div className="mt-6 flex items-start gap-3 p-4 bg-white/40 rounded-2xl">
+                      <Info size={16} className="text-emerald-600 mt-0.5 shrink-0" />
+                      <p className="text-[9px] font-bold text-emerald-800 uppercase leading-relaxed">
+                        Solo los productos en la categoría <span className="underline font-black">"Catálogo"</span> serán visibles en la web. Los clientes no podrán realizar pedidos, solo visualizar stock y precios.
+                      </p>
+                  </div>
+              </div>
+            ) : (
+              <div className="bg-gray-50 border-2 border-dashed border-gray-200 p-12 rounded-[2.5rem] text-center">
+                  <Globe size={48} className="mx-auto text-gray-200 mb-4" />
+                  <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Servidor Desconectado</p>
+              </div>
+            )}
           </section>
 
           {/* B. PERIFÉRICOS */}

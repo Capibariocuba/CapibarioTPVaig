@@ -6,7 +6,8 @@ export enum View {
   CLIENTS = 'CLIENTS',
   CONFIGURATION = 'CONFIGURATION',
   LEDGER = 'LEDGER',
-  EMPLOYEES = 'EMPLOYEES'
+  EMPLOYEES = 'EMPLOYEES',
+  WEB_CATALOG = 'WEB_CATALOG'
 }
 
 export enum Currency {
@@ -113,6 +114,8 @@ export interface BusinessConfig {
   googleAccount?: GoogleAccountStub;
   posTerminals?: POSStoreTerminal[];
   peripherals?: PeripheralsSettings;
+  isWebCatalogActive?: boolean;
+  webCatalogPort?: number;
 }
 
 export interface User {

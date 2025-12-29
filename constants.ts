@@ -67,7 +67,9 @@ export const DEFAULT_BUSINESS_CONFIG: BusinessConfig = {
   // Valores por defecto Empresa Fase 2
   googleAccount: { email: '', connected: false },
   posTerminals: [],
-  peripherals: { printerMode: 'BROWSER', barcodeScannerMode: 'HID' }
+  peripherals: { printerMode: 'BROWSER', barcodeScannerMode: 'HID' },
+  isWebCatalogActive: false,
+  webCatalogPort: 8088
 };
 
 export const MOCK_USERS: User[] = [
