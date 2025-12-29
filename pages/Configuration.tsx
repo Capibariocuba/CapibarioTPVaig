@@ -7,7 +7,7 @@ import {
   Lock, Building2, User as UserIcon, DollarSign, ShieldCheck, 
   Save, Plus, Trash2, Key, Crown, Printer, Barcode, CreditCard, 
   Phone, Mail, MapPin, Hash, Receipt, AlertCircle, Banknote, Globe, Wallet, Camera, Monitor, LogIn, LogOut, CheckSquare, Square, X,
-  ArrowRight, Sparkles, Cloud, Zap, ExternalLink, Copy, Info
+  ArrowRight, Sparkles, Cloud, Zap, ExternalLink, Copy, Info, QrCode
 } from 'lucide-react';
 
 export const Configuration: React.FC = () => {
@@ -256,7 +256,9 @@ export const Configuration: React.FC = () => {
     );
   }
 
-  const catalogUrl = `${window.location.origin}/#/catalog`;
+  // URL ABSOLUTA PARA QR Y ACCESO LAN
+  // En una red local real, window.location.hostname devolvería la IP del servidor.
+  const absoluteCatalogUrl = `${window.location.origin}/#/catalog`;
 
   return (
     <div className="p-8 bg-gray-50 h-full overflow-y-auto animate-in fade-in duration-500">
@@ -370,7 +372,7 @@ export const Configuration: React.FC = () => {
                   <h3 className="text-2xl font-black text-slate-800 uppercase tracking-tighter flex items-center gap-3">
                     <Globe className="text-brand-500" /> Catálogo Web Local (LAN)
                   </h3>
-                  <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-1">Comparte tus productos con clientes en tu misma red Wi-Fi</p>
+                  <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-1">Comparte tus productos mediante código QR en tu red Wi-Fi</p>
                </div>
                <button 
                   onClick={() => setTempBiz({ ...tempBiz, isWebCatalogActive: !tempBiz.isWebCatalogActive })}
@@ -383,23 +385,24 @@ export const Configuration: React.FC = () => {
             {tempBiz.isWebCatalogActive ? (
               <div className="bg-emerald-50 border-2 border-emerald-100 p-8 rounded-[2.5rem] animate-in slide-in-from-top-4 duration-500">
                   <div className="flex flex-col md:flex-row items-center gap-8">
-                      <div className="bg-white p-4 rounded-[2rem] shadow-xl text-emerald-600">
-                          <Zap size={40} className="animate-pulse" />
+                      <div className="bg-white p-6 rounded-[2.5rem] shadow-xl text-emerald-600 flex flex-col items-center gap-2">
+                          <QrCode size={64} className="mb-2" />
+                          <span className="text-[8px] font-black uppercase">Escanear para menú</span>
                       </div>
                       <div className="flex-1 text-center md:text-left">
-                          <p className="text-[10px] font-black text-emerald-600 uppercase tracking-widest mb-1">Estatus: Servidor levantado en puerto {tempBiz.webCatalogPort || 8088}</p>
-                          <h4 className="text-xl font-black text-slate-800 tracking-tight mb-3">Enlace de acceso local:</h4>
-                          <div className="flex items-center gap-2 bg-white/60 p-3 rounded-xl border border-emerald-200">
-                              <code className="text-xs font-black text-slate-700 select-all flex-1">{catalogUrl}</code>
-                              <button onClick={() => { navigator.clipboard.writeText(catalogUrl); notify("Copiado al portapapeles", "success"); }} className="p-2 text-emerald-600 hover:bg-emerald-100 rounded-lg transition-colors"><Copy size={16}/></button>
-                              <button onClick={() => setView(View.WEB_CATALOG)} className="p-2 text-brand-600 hover:bg-brand-100 rounded-lg transition-colors"><ExternalLink size={16}/></button>
+                          <p className="text-[10px] font-black text-emerald-600 uppercase tracking-widest mb-1">Punto de Acceso: {tempBiz.webCatalogPort || 8088}</p>
+                          <h4 className="text-xl font-black text-slate-800 tracking-tight mb-3">Enlace Directo para Clientes:</h4>
+                          <div className="flex items-center gap-2 bg-white/60 p-4 rounded-2xl border border-emerald-200 shadow-inner">
+                              <code className="text-[11px] font-black text-slate-700 select-all flex-1 truncate">{absoluteCatalogUrl}</code>
+                              <button onClick={() => { navigator.clipboard.writeText(absoluteCatalogUrl); notify("Copiado al portapapeles", "success"); }} className="p-2.5 text-emerald-600 hover:bg-emerald-100 rounded-xl transition-colors"><Copy size={18}/></button>
+                              <a href={absoluteCatalogUrl} target="_blank" rel="noopener noreferrer" className="p-2.5 text-brand-600 hover:bg-brand-100 rounded-xl transition-colors"><ExternalLink size={18}/></a>
                           </div>
                       </div>
                   </div>
                   <div className="mt-6 flex items-start gap-3 p-4 bg-white/40 rounded-2xl">
                       <Info size={16} className="text-emerald-600 mt-0.5 shrink-0" />
                       <p className="text-[9px] font-bold text-emerald-800 uppercase leading-relaxed">
-                        Solo los productos en la categoría <span className="underline font-black">"Catálogo"</span> serán visibles en la web. Los clientes no podrán realizar pedidos, solo visualizar stock y precios.
+                        Este enlace solo funcionará para dispositivos conectados a la misma red Wi-Fi del TPV. El catálogo <span className="underline font-black">NO muestra existencias</span>, solo precios actualizados.
                       </p>
                   </div>
               </div>

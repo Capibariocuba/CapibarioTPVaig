@@ -106,6 +106,28 @@ const ActivationScreen: React.FC = () => {
   );
 };
 
+const RootRouter: React.FC = () => {
+  const { view, setView, isLicenseValid, employees } = useStore();
+  
+  // DETECCIÓN DE MODO CATÁLOGO (Ruta Pública)
+  // Si la URL contiene /catalog, forzamos renderizado del catálogo sin Sidebar ni Guards del TPV.
+  const [isCatalogMode, setIsCatalogMode] = useState(() => window.location.hash.includes('#/catalog'));
+
+  useEffect(() => {
+    const handleHashChange = () => setIsCatalogMode(window.location.hash.includes('#/catalog'));
+    window.addEventListener('hashchange', handleHashChange);
+    return () => window.removeEventListener('hashchange', handleHashChange);
+  }, []);
+
+  if (isCatalogMode) {
+    return <WebCatalogView />;
+  }
+
+  if (!isLicenseValid) return <ActivationScreen />;
+
+  return <MainLayout />;
+}
+
 const MainLayout: React.FC = () => {
   const { view, setView, isLicenseValid, employees } = useStore();
   
@@ -116,20 +138,13 @@ const MainLayout: React.FC = () => {
     localStorage.setItem('_sidebar_pinned', String(sidebarPinned));
   }, [sidebarPinned]);
 
-  // Setup Gate: Si no hay administrador en empleados, forzar vista empleados
+  // Setup Gate: Si no hay administrador en empleados, forzar vista empleados (Solo en modo TPV)
   useEffect(() => {
     const hasAdmin = employees.some((e: any) => e.role === Role.ADMIN);
-    if (isLicenseValid && !hasAdmin && view !== View.EMPLOYEES && view !== View.WEB_CATALOG) {
+    if (isLicenseValid && !hasAdmin && view !== View.EMPLOYEES) {
       setView(View.EMPLOYEES);
     }
   }, [isLicenseValid, employees, view, setView]);
-
-  if (!isLicenseValid) return <ActivationScreen />;
-
-  // Caso especial: Catálogo Web Local no requiere Sidebar ni autenticación POS
-  if (view === View.WEB_CATALOG) {
-      return <WebCatalogView />;
-  }
 
   const hasAdmin = employees.some((e: any) => e.role === Role.ADMIN);
 
@@ -142,13 +157,12 @@ const MainLayout: React.FC = () => {
       case View.CONFIGURATION: return <Configuration />;
       case View.LEDGER: return <Ledger />;
       case View.EMPLOYEES: return <Employees />;
-      default: return <div>404</div>;
+      default: return <POS />;
     }
   };
 
   return (
     <div className="flex h-screen w-screen overflow-hidden bg-gray-50">
-      {/* El sidebar se muestra pero sus items están bloqueados por roles si currentUser es null */}
       <Sidebar 
         isPinned={sidebarPinned} 
         isOpen={sidebarOpen} 
@@ -157,7 +171,6 @@ const MainLayout: React.FC = () => {
       />
       
       <main className="flex-1 h-full overflow-hidden relative">
-        {/* Bloquear botón de hamburguesa si no hay admin para evitar ruidos visuales */}
         {!sidebarPinned && !sidebarOpen && hasAdmin && (
           <button 
             onClick={() => setSidebarOpen(true)}
@@ -176,7 +189,7 @@ const MainLayout: React.FC = () => {
 const App: React.FC = () => {
   return (
     <StoreProvider>
-      <MainLayout />
+      <RootRouter />
     </StoreProvider>
   );
 };
