@@ -11,6 +11,7 @@ export const ShiftManager: React.FC<{ onOpen?: () => void }> = ({ onOpen }) => {
   } = useStore();
   
   // Estados de flujo
+  // Fix: Permitir que el componente mantenga su estado si el reporte ya fue generado
   const [step, setStep] = useState<'IDLE' | 'PIN' | 'ARQUEO' | 'Z_REPORT'>(activeShift ? 'PIN' : 'IDLE');
   const [authUserInfo, setAuthUserInfo] = useState<User | null>(null);
   
@@ -23,26 +24,26 @@ export const ShiftManager: React.FC<{ onOpen?: () => void }> = ({ onOpen }) => {
   const [lastShiftSummary, setLastShiftSummary] = useState<any>(null);
 
   // Utilidades
-  const formatNum = (num: number) => new Intl.NumberFormat('es-CU', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(num);
+  const formatNum = (num: number) => {
+    const n = Number(num);
+    return isNaN(n) ? "0.00" : new Intl.NumberFormat('es-CU', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n);
+  };
 
   const expectedMetrics = useMemo(() => {
     if (!activeShift) return {};
     const totals: Record<string, number> = {};
     const turnSales = sales.filter(s => s.shiftId === activeShift.id);
     
-    // Obtener efectivo neto (Ingresos - Cambios - Reembolsos) del sistema contable filtrado por este turno
     const systemCash = getCurrentCash();
-    
     Object.entries(systemCash).forEach(([curr, val]) => {
-      totals[`CASH_${curr}`] = val as number;
+      totals[`CASH_${curr}`] = Number(val) || 0;
     });
 
-    // Otros métodos de pago sumados de las ventas del turno
     turnSales.forEach(sale => {
       sale.payments.forEach(pay => {
         if (pay.method !== 'CASH') {
           const key = `${pay.method}_${pay.currency}`;
-          totals[key] = (totals[key] || 0) + pay.amount;
+          totals[key] = (totals[key] || 0) + (Number(pay.amount) || 0);
         }
       });
     });
@@ -79,7 +80,8 @@ export const ShiftManager: React.FC<{ onOpen?: () => void }> = ({ onOpen }) => {
     const results: any[] = [];
 
     products.forEach(p => {
-      const startStock = currentShift.initialStock[p.id] || 0;
+      const pId = p.id;
+      const startStock = currentShift.initialStock[pId] || 0;
       
       const entriesQty = (p.history || [])
         .filter(log => {
@@ -87,37 +89,38 @@ export const ShiftManager: React.FC<{ onOpen?: () => void }> = ({ onOpen }) => {
           return logTime >= startTime && logTime <= endTime && 
                  log.type === 'STOCK_ADJUST' && 
                  log.entityType === 'PRODUCT' && 
-                 log.entityId === p.id &&
-                 log.details_raw?.after?.qty;
+                 log.entityId === pId;
         })
-        .reduce((sum, log) => sum + (log.details_raw?.after?.qty || 0), 0);
+        .reduce((sum, log) => sum + (Number(log.details_raw?.after?.qty) || 0), 0);
 
-      const soldQty = turnSales.reduce((acc, sale) => {
-        const item = sale.items.find(i => i.id === p.id && !i.selectedVariantId);
-        return acc + (item?.quantity || 0);
-      }, 0);
+      let soldQty = 0;
+      let refundedQty = 0;
 
-      // Descontar reembolsos del total vendido en este turno
-      const refundedQty = turnSales.reduce((acc, sale) => {
-          const itemRefunded = sale.refunds?.filter(r => new Date(r.timestamp).getTime() >= startTime && new Date(r.timestamp).getTime() <= endTime)
-              .reduce((rAcc, r) => rAcc + (r.items.find(ri => ri.cartId === p.id)?.qty || 0), 0) || 0;
-          return acc + itemRefunded;
-      }, 0);
+      turnSales.forEach(sale => {
+        const item = sale.items.find(i => i.id === pId && !i.selectedVariantId);
+        if (item) soldQty += (Number(item.quantity) || 0);
+
+        const itemRefunded = sale.refunds?.filter(r => {
+            const rt = new Date(r.timestamp).getTime();
+            return rt >= startTime && rt <= endTime;
+        }).reduce((rAcc, r) => rAcc + (r.items.find(ri => ri.cartId === pId)?.qty || 0), 0) || 0;
+        refundedQty += itemRefunded;
+      });
 
       const netSold = soldQty - refundedQty;
 
       if (startStock > 0 || soldQty > 0 || entriesQty > 0) {
         results.push({
-          name: p.name,
+          name: p.name || 'Producto Sin Nombre',
           start: startStock,
           entries: entriesQty,
           sales: netSold,
-          final: p.stock
+          final: p.stock || 0
         });
       }
 
-      p.variants.forEach(v => {
-        const vKey = `${p.id}-${v.id}`;
+      (p.variants || []).forEach(v => {
+        const vKey = `${pId}-${v.id}`;
         const startV = currentShift.initialStock[vKey] || 0;
         
         const entriesV = (p.history || [])
@@ -126,31 +129,33 @@ export const ShiftManager: React.FC<{ onOpen?: () => void }> = ({ onOpen }) => {
             return logTime >= startTime && logTime <= endTime && 
                    log.type === 'STOCK_ADJUST' && 
                    log.entityType === 'VARIANT' && 
-                   log.entityId === v.id &&
-                   log.details_raw?.after?.qty;
+                   log.entityId === v.id;
           })
-          .reduce((sum, log) => sum + (log.details_raw?.after?.qty || 0), 0);
+          .reduce((sum, log) => sum + (Number(log.details_raw?.after?.qty) || 0), 0);
 
-        const soldV = turnSales.reduce((acc, sale) => {
+        let soldV = 0;
+        let refundedV = 0;
+
+        turnSales.forEach(sale => {
           const item = sale.items.find(i => i.selectedVariantId === v.id);
-          return acc + (item?.quantity || 0);
-        }, 0);
+          if (item) soldV += (Number(item.quantity) || 0);
 
-        const refundedV = turnSales.reduce((acc, sale) => {
-            const itemRefunded = sale.refunds?.filter(r => new Date(r.timestamp).getTime() >= startTime && new Date(r.timestamp).getTime() <= endTime)
-                .reduce((rAcc, r) => rAcc + (r.items.find(ri => ri.cartId === vKey)?.qty || 0), 0) || 0;
-            return rAcc + itemRefunded;
-        }, 0);
+          const itemRef = sale.refunds?.filter(r => {
+              const rt = new Date(r.timestamp).getTime();
+              return rt >= startTime && rt <= endTime;
+          }).reduce((rAcc, r) => rAcc + (r.items.find(ri => ri.cartId === vKey)?.qty || 0), 0) || 0;
+          refundedV += itemRef;
+        });
 
         const netSoldV = soldV - refundedV;
 
         if (startV > 0 || soldV > 0 || entriesV > 0) {
           results.push({
-            name: `${p.name} (${v.name})`,
+            name: `${p.name || ''} (${v.name || 'Variante'})`,
             start: startV,
             entries: entriesV,
             sales: netSoldV,
-            final: v.stock
+            final: v.stock || 0
           });
         }
       });
@@ -159,14 +164,13 @@ export const ShiftManager: React.FC<{ onOpen?: () => void }> = ({ onOpen }) => {
   }, [sales, products, activeShift, lastShiftSummary]);
 
   const handleConfirmClosure = () => {
-    const isAdmin = authUserInfo?.role === Role.ADMIN || authUserInfo?.role === Role.ACCOUNTANT;
+    if (!activeShift) return;
     const finalCounts: Record<string, number> = {};
     
     let hasMismatch = false;
     Object.keys(expectedMetrics).forEach(key => {
       const actual = parseFloat(actualCounts[key] || '0');
-      // Fix: cast expectedMetrics[key] to number to avoid "unknown" potential in comparisons
-      const expected = expectedMetrics[key] as number;
+      const expected = Number(expectedMetrics[key]) || 0;
       if (Math.abs(actual - expected) > 0.01) hasMismatch = true;
       finalCounts[key] = actual;
     });
@@ -176,11 +180,10 @@ export const ShiftManager: React.FC<{ onOpen?: () => void }> = ({ onOpen }) => {
       return;
     }
 
-    const turnSales = sales.filter(s => s.shiftId === activeShift!.id);
-    const startTime = new Date(activeShift!.openedAt).getTime();
+    const turnSales = sales.filter(s => s.shiftId === activeShift.id);
+    const startTime = new Date(activeShift.openedAt).getTime();
     const endTime = Date.now();
 
-    // NUEVAS MÉTRICAS DETALLADAS
     let rInCaja = 0;
     let rFueraCaja = 0;
     let couponDisc = 0;
@@ -188,15 +191,16 @@ export const ShiftManager: React.FC<{ onOpen?: () => void }> = ({ onOpen }) => {
     let bogoApps = 0;
 
     turnSales.forEach(sale => {
-        // Descuentos desglosados (ahora guardados en processSale)
-        couponDisc += (sale.couponDiscount || 0);
-        bogoDisc += (sale.bogoDiscount || 0);
-        bogoApps += (sale.bogoAppsCount || 0);
+        couponDisc += (Number(sale.couponDiscount) || 0);
+        bogoDisc += (Number(sale.bogoDiscount) || 0);
+        bogoApps += (Number(sale.bogoAppsCount) || 0);
 
-        // Reembolsos dentro de este turno
-        sale.refunds?.filter(r => new Date(r.timestamp).getTime() >= startTime && new Date(r.timestamp).getTime() <= endTime).forEach(ref => {
-            if (ref.refundSource === 'OUTSIDE_CASHBOX') rFueraCaja += ref.totalCUP;
-            else rInCaja += ref.totalCUP;
+        sale.refunds?.filter(r => {
+          const rt = new Date(r.timestamp).getTime();
+          return rt >= startTime && rt <= endTime;
+        }).forEach(ref => {
+            if (ref.refundSource === 'OUTSIDE_CASHBOX') rFueraCaja += Number(ref.totalCUP) || 0;
+            else rInCaja += Number(ref.totalCUP) || 0;
         });
     });
 
@@ -205,9 +209,9 @@ export const ShiftManager: React.FC<{ onOpen?: () => void }> = ({ onOpen }) => {
       metrics: { ...expectedMetrics },
       actual: { ...finalCounts },
       inventory: [...inventoryReportData],
-      totalGross: turnSales.reduce((a, b) => a + b.total, 0),
+      totalGross: turnSales.reduce((a, b) => a + (Number(b.total) || 0), 0),
       closedAt: new Date().toISOString(),
-      closedBy: authUserInfo?.name,
+      closedBy: authUserInfo?.name || 'Sistema',
       refundsIn: rInCaja,
       refundsOut: rFueraCaja,
       couponDisc,
@@ -216,8 +220,10 @@ export const ShiftManager: React.FC<{ onOpen?: () => void }> = ({ onOpen }) => {
     };
 
     setLastShiftSummary(summary);
-    closeShift(finalCounts, authUserInfo?.name || 'Sistema');
+    // Cambiar paso antes de cerrar el turno global para que el renderizado de ShiftManager
+    // se mantenga en Z_REPORT aunque activeShift pase a null.
     setStep('Z_REPORT');
+    closeShift(finalCounts, authUserInfo?.name || 'Sistema');
   };
 
   const getZReportHTML = () => {
@@ -228,18 +234,18 @@ export const ShiftManager: React.FC<{ onOpen?: () => void }> = ({ onOpen }) => {
     return `
       <div style="font-family: 'Courier New', Courier, monospace; width: 72mm; color: #000; font-size: 10pt; line-height: 1.2;">
         <div style="text-align: center; margin-bottom: 4mm;">
-          <h2 style="margin: 0; font-size: 13pt; font-weight: bold;">${businessConfig.name.toUpperCase()}</h2>
-          <p style="margin: 1mm 0; font-size: 8pt;">${businessConfig.address.substring(0, 35)}</p>
+          <h2 style="margin: 0; font-size: 13pt; font-weight: bold;">${(businessConfig.name || '').toUpperCase()}</h2>
+          <p style="margin: 1mm 0; font-size: 8pt;">${(businessConfig.address || '').substring(0, 35)}</p>
           <div style="border-bottom: 1px dashed #000; margin: 2mm 0;"></div>
           <p style="margin: 0; font-weight: bold; font-size: 11pt;">REPORTE DE CIERRE Z</p>
-          <p style="margin: 0;">TURNO: #${s.shift.id.slice(-6)}</p>
+          <p style="margin: 0;">TURNO: #${(s.shift.id || '').slice(-6)}</p>
         </div>
 
         <div style="font-size: 8pt; margin-bottom: 3mm;">
           FECHA APERTURA: ${new Date(s.shift.openedAt).toLocaleString()}<br>
           FECHA CIERRE: ${new Date(s.closedAt).toLocaleString()}<br>
-          OPERADOR APER.: ${s.shift.openedBy.toUpperCase()}<br>
-          OPERADOR CIER.: ${s.closedBy.toUpperCase()}
+          OPERADOR APER.: ${(s.shift.openedBy || '').toUpperCase()}<br>
+          OPERADOR CIER.: ${(s.closedBy || '').toUpperCase()}
         </div>
 
         <div style="border-bottom: 1px solid #000; margin-bottom: 2mm;"></div>
@@ -252,9 +258,9 @@ export const ShiftManager: React.FC<{ onOpen?: () => void }> = ({ onOpen }) => {
           </tr>
           ${Object.entries(s.actual).map(([k, v]) => `
             <tr>
-              <td style="padding: 1mm 0;">${k.replace('CASH_', 'EFECTIVO ').replace('_', ' ')}</td>
-              ${isAdmin ? `<td style="text-align: right;">$${formatNum((s.metrics[k] as number) || 0)}</td>` : ''}
-              <td style="text-align: right; font-weight: bold;">$${formatNum(v as number)}</td>
+              <td style="padding: 1mm 0;">${(k || '').replace('CASH_', 'EFECTIVO ').replace('_', ' ')}</td>
+              ${isAdmin ? `<td style="text-align: right;">$${formatNum(Number(s.metrics[k]) || 0)}</td>` : ''}
+              <td style="text-align: right; font-weight: bold;">$${formatNum(Number(v) || 0)}</td>
             </tr>
           `).join('')}
         </table>
@@ -264,7 +270,6 @@ export const ShiftManager: React.FC<{ onOpen?: () => void }> = ({ onOpen }) => {
         <div style="font-size: 8pt;">
             <div style="display:flex; justify-content: space-between;"><span>EN CAJA:</span><span>$${formatNum(s.refundsIn)}</span></div>
             <div style="display:flex; justify-content: space-between;"><span>FUERA CAJA:</span><span>$${formatNum(s.refundsOut)}</span></div>
-            <!-- Fix: Explicit Number cast to avoid errors on any/unknown types -->
             <div style="display:flex; justify-content: space-between; font-weight:bold; margin-top:1mm;"><span>TOTAL DEV.:</span><span>$${formatNum((Number(s.refundsIn) || 0) + (Number(s.refundsOut) || 0))}</span></div>
         </div>
 
@@ -274,7 +279,6 @@ export const ShiftManager: React.FC<{ onOpen?: () => void }> = ({ onOpen }) => {
             <div style="display:flex; justify-content: space-between;"><span>CUPONES:</span><span>$${formatNum(s.couponDisc)}</span></div>
             <div style="display:flex; justify-content: space-between;"><span>BOGO:</span><span>$${formatNum(s.bogoDisc)}</span></div>
             <div style="display:flex; justify-content: space-between;"><span>APPS BOGO:</span><span>${s.bogoApps}</span></div>
-            <!-- Fix: Explicit Number cast to avoid errors on any/unknown types -->
             <div style="display:flex; justify-content: space-between; font-weight:bold; margin-top:1mm;"><span>TOTAL DESC.:</span><span>$${formatNum((Number(s.couponDisc) || 0) + (Number(s.bogoDisc) || 0))}</span></div>
         </div>
 
@@ -288,9 +292,9 @@ export const ShiftManager: React.FC<{ onOpen?: () => void }> = ({ onOpen }) => {
             <th style="text-align: right;">VND</th>
             <th style="text-align: right;">FIN</th>
           </tr>
-          ${s.inventory.map((m: any) => `
+          ${(s.inventory || []).map((m: any) => `
             <tr>
-              <td style="padding: 1mm 0; white-space: nowrap; overflow: hidden; max-width: 30mm;">${m.name.toUpperCase()}</td>
+              <td style="padding: 1mm 0; white-space: nowrap; overflow: hidden; max-width: 30mm;">${(m.name || '').toUpperCase()}</td>
               <td style="text-align: right;">${m.start}</td>
               <td style="text-align: right;">${m.entries || 0}</td>
               <td style="text-align: right; font-weight: bold;">${m.sales}</td>
@@ -301,7 +305,7 @@ export const ShiftManager: React.FC<{ onOpen?: () => void }> = ({ onOpen }) => {
 
         <div style="border-bottom: 1px dashed #000; margin: 3mm 0;"></div>
         <div style="text-align: center; font-weight: bold; font-size: 11pt;">
-          VENTAS TURNO: $${formatNum(s.totalGross as number)}
+          VENTAS TURNO: $${formatNum(Number(s.totalGross) || 0)}
         </div>
         <p style="text-align: center; font-size: 8pt; margin-top: 5mm; opacity: 0.6;">--- FIN DEL REPORTE ---</p>
       </div>
@@ -328,6 +332,28 @@ export const ShiftManager: React.FC<{ onOpen?: () => void }> = ({ onOpen }) => {
     logout();
     window.location.reload();
   };
+
+  // RENDER: REPORTE Z (Prioridad alta para evitar resets)
+  if (step === 'Z_REPORT' && lastShiftSummary) {
+    return (
+      <div className="h-full bg-slate-950 flex flex-col items-center justify-start p-6 animate-in slide-in-from-bottom duration-700 overflow-y-auto pt-16">
+          <div className="bg-emerald-50 text-emerald-600 p-10 rounded-[3rem] w-full max-sm mb-10 text-center shadow-2xl shadow-emerald-500/20 shrink-0">
+             <CheckCircle size={64} className="mx-auto mb-4" />
+             <h2 className="text-2xl font-black uppercase tracking-tighter leading-tight text-emerald-800">Ciclo Contable<br/>Cerrado</h2>
+             <p className="text-[10px] font-bold uppercase opacity-80 mt-2">Imprima su comprobante Z ahora</p>
+          </div>
+
+          <div className="bg-white max-w-[350px] w-full p-8 shadow-2xl rounded-sm mb-10 animate-in fade-in duration-1000 delay-300">
+              <div dangerouslySetInnerHTML={{ __html: getZReportHTML() }} />
+          </div>
+          
+          <div className="flex flex-col md:flex-row gap-4 w-full max-w-[350px] pb-10">
+              <button onClick={handlePrintZ} className="flex-1 bg-white text-slate-900 py-5 rounded-2xl font-black uppercase text-[10px] tracking-widest shadow-xl flex items-center justify-center gap-2 hover:bg-gray-100 transition-all"><Printer size={16}/> Imprimir Reporte</button>
+              <button onClick={handleFinalReset} className="flex-1 bg-brand-500 text-white py-5 rounded-2xl font-black uppercase text-[10px] tracking-widest shadow-xl hover:bg-brand-600 transition-all">Nueva Jornada</button>
+          </div>
+      </div>
+    );
+  }
 
   // RENDER: APERTURA
   if (step === 'IDLE') {
@@ -387,7 +413,7 @@ export const ShiftManager: React.FC<{ onOpen?: () => void }> = ({ onOpen }) => {
     );
   }
 
-  // RENDER: ARQUEO (CIEGO VS TRANSPARENTE)
+  // RENDER: ARQUEO
   if (step === 'ARQUEO') {
     const isBlind = authUserInfo?.role === Role.DEPENDENT;
     return (
@@ -404,12 +430,13 @@ export const ShiftManager: React.FC<{ onOpen?: () => void }> = ({ onOpen }) => {
           <div className="flex-1 overflow-y-auto p-8 space-y-6">
              {Object.entries(expectedMetrics).map(([key, expected]) => {
                  const actual = parseFloat(actualCounts[key] || '0');
-                 const diff = actual - expected;
+                 const expVal = Number(expected) || 0;
+                 const diff = actual - expVal;
                  return (
                    <div key={key} className="bg-gray-50 p-6 rounded-[2.5rem] border border-gray-100 flex flex-col gap-4">
                       <div className="flex justify-between items-center">
-                        <span className="font-black text-slate-400 text-[10px] uppercase tracking-widest">{key.replace('CASH_','').replace('_',' ')}</span>
-                        {!isBlind && <span className="font-bold text-xs text-brand-600">Sistema: ${formatNum(expected)}</span>}
+                        <span className="font-black text-slate-400 text-[10px] uppercase tracking-widest">{(key || '').replace('CASH_','').replace('_',' ')}</span>
+                        {!isBlind && <span className="font-bold text-xs text-brand-600">Sistema: ${formatNum(expVal)}</span>}
                       </div>
                       <div className="flex gap-4 items-center">
                         <input 
@@ -437,28 +464,6 @@ export const ShiftManager: React.FC<{ onOpen?: () => void }> = ({ onOpen }) => {
              </button>
           </div>
         </div>
-      </div>
-    );
-  }
-
-  // RENDER: REPORTE Z (PANTALLA FINAL)
-  if (step === 'Z_REPORT') {
-    return (
-      <div className="h-full bg-slate-950 flex flex-col items-center justify-start p-6 animate-in slide-in-from-bottom duration-700 overflow-y-auto pt-16">
-          <div className="bg-emerald-50 text-white p-10 rounded-[3rem] w-full max-sm mb-10 text-center shadow-2xl shadow-emerald-500/20 shrink-0">
-             <CheckCircle size={64} className="mx-auto mb-4" />
-             <h2 className="text-2xl font-black uppercase tracking-tighter leading-tight">Ciclo Contable<br/>Cerrado</h2>
-             <p className="text-[10px] font-bold uppercase opacity-80 mt-2">Imprima su comprobante Z ahora</p>
-          </div>
-
-          <div className="bg-white max-w-[350px] w-full p-8 shadow-2xl rounded-sm mb-10 animate-in fade-in duration-1000 delay-300">
-              <div dangerouslySetInnerHTML={{ __html: getZReportHTML() }} />
-          </div>
-          
-          <div className="flex flex-col md:flex-row gap-4 w-full max-w-[350px] pb-10">
-              <button onClick={handlePrintZ} className="flex-1 bg-white text-slate-900 py-5 rounded-2xl font-black uppercase text-[10px] tracking-widest shadow-xl flex items-center justify-center gap-2 hover:bg-gray-100 transition-all"><Printer size={16}/> Imprimir Reporte</button>
-              <button onClick={handleFinalReset} className="flex-1 bg-brand-500 text-white py-5 rounded-2xl font-black uppercase text-[10px] tracking-widest shadow-xl hover:bg-brand-600 transition-all">Nueva Jornada</button>
-          </div>
       </div>
     );
   }
