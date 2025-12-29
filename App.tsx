@@ -110,7 +110,6 @@ const RootRouter: React.FC = () => {
   const { view, setView, isLicenseValid, employees } = useStore();
   
   // DETECCIÓN DE MODO CATÁLOGO (Ruta Pública)
-  // Si la URL contiene /catalog, forzamos renderizado del catálogo sin Sidebar ni Guards del TPV.
   const [isCatalogMode, setIsCatalogMode] = useState(() => window.location.hash.includes('#/catalog'));
 
   useEffect(() => {

@@ -1,13 +1,33 @@
 
-import React, { useMemo, useState, useRef } from 'react';
+import React, { useMemo, useState, useRef, useEffect } from 'react';
 import { useStore } from '../context/StoreContext';
-import { Package, Phone, MapPin, Globe, Sparkles, AlertCircle, ChevronLeft, ChevronRight, ShoppingBag } from 'lucide-react';
+import { Package, Phone, MapPin, Globe, Sparkles, AlertCircle, ShoppingBag, ChevronRight } from 'lucide-react';
 import { Product } from '../types';
 
 export const WebCatalogView: React.FC = () => {
   const { products, businessConfig } = useStore();
+  const [isTvMode, setIsTvMode] = useState(() => window.location.hash.includes('/tv'));
+  const [lastSync, setLastSync] = useState(Date.now());
 
-  // APLANADO DE VARIANTES: Cada variante es un ítem independiente para el cliente final
+  // Fix: marquee is deprecated and not in JSX.IntrinsicElements. Use a casted reference to bypass type checking.
+  const Marquee = 'marquee' as any;
+
+  // POLLING: Actualizar estado cada 15s (Simulado mediante re-render si hay cambios en store)
+  useEffect(() => {
+    const pollInterval = setInterval(() => {
+      setLastSync(Date.now());
+    }, 15000);
+    
+    const handleHash = () => setIsTvMode(window.location.hash.includes('/tv'));
+    window.addEventListener('hashchange', handleHash);
+    
+    return () => {
+      clearInterval(pollInterval);
+      window.removeEventListener('hashchange', handleHash);
+    };
+  }, []);
+
+  // APLANADO DE VARIANTES (Regla innegociable)
   const flattenedProducts = useMemo(() => {
     return products
       .filter(p => !p.hidden && p.categories.includes('Catálogo'))
@@ -16,36 +36,56 @@ export const WebCatalogView: React.FC = () => {
           ...p,
           displayName: p.name,
           displayImage: p.image,
-          displayPrice: p.price
+          displayPrice: p.price,
+          displayStock: p.stock
         };
         
         const variantItems = (p.variants || []).map(v => ({
           ...p,
-          id: v.id, // ID de la variante para unicidad
+          id: v.id,
           displayName: `${p.name} - ${v.name}`,
           displayImage: v.image || p.image,
-          displayPrice: v.price
+          displayPrice: v.price,
+          displayStock: v.stock
         }));
 
         return [baseProduct, ...variantItems];
       });
-  }, [products]);
+  }, [products, lastSync]);
 
   // AGRUPACIÓN POR CATEGORÍA
-  const groupedProducts = useMemo(() => {
+  const groupedData = useMemo(() => {
     const groups: Record<string, any[]> = {};
     flattenedProducts.forEach(item => {
       const otherCats = item.categories.filter(c => c !== 'Catálogo');
-      if (otherCats.length === 0) {
-        groups['General'] = [...(groups['General'] || []), item];
-      } else {
-        otherCats.forEach(cat => {
-          groups[cat] = [...(groups[cat] || []), item];
-        });
-      }
+      const catKey = otherCats[0] || 'General';
+      groups[catKey] = [...(groups[catKey] || []), item];
     });
-    return groups;
+    return Object.entries(groups).map(([name, items]) => ({ name, items }));
   }, [flattenedProducts]);
+
+  // --- LÓGICA DE ROTACIÓN TV ---
+  const [catIndex, setCatIndex] = useState(0);
+  const [pageIndex, setPageIndex] = useState(0);
+  const itemsPerPage = 8; // Ajustado para grid 4x2 en TV
+
+  useEffect(() => {
+    if (!isTvMode || groupedData.length === 0) return;
+
+    const rotationInterval = setInterval(() => {
+      const currentCat = groupedData[catIndex];
+      const totalPages = Math.ceil(currentCat.items.length / itemsPerPage);
+
+      if (pageIndex < totalPages - 1) {
+        setPageIndex(prev => prev + 1);
+      } else {
+        setPageIndex(0);
+        setCatIndex(prev => (prev + 1) % groupedData.length);
+      }
+    }, 10000); // 10 segundos por pantalla
+
+    return () => clearInterval(rotationInterval);
+  }, [isTvMode, catIndex, pageIndex, groupedData]);
 
   if (!businessConfig.isWebCatalogActive) {
     return (
@@ -61,9 +101,98 @@ export const WebCatalogView: React.FC = () => {
     );
   }
 
+  // --- RENDER MODO TV (Opción A) ---
+  if (isTvMode) {
+    const currentCategory = groupedData[catIndex] || { name: '...', items: [] };
+    const pagedItems = currentCategory.items.slice(pageIndex * itemsPerPage, (pageIndex * itemsPerPage) + itemsPerPage);
+    const totalPages = Math.ceil(currentCategory.items.length / itemsPerPage);
+
+    return (
+      <div className="h-screen w-screen bg-slate-950 text-white overflow-hidden flex flex-col font-sans select-none">
+        {/* TV HEADER */}
+        <header className="h-[15vh] border-b border-white/10 flex items-center justify-between px-12 shrink-0 bg-slate-900/50 backdrop-blur-md">
+           <div className="flex items-center gap-8">
+              <div className="w-20 h-20 rounded-3xl bg-white p-2 shadow-2xl">
+                 <img src={businessConfig.logo || ''} className="w-full h-full object-contain" alt="Logo" />
+              </div>
+              <div>
+                 <h1 className="text-4xl font-black uppercase tracking-tighter">{businessConfig.name}</h1>
+                 <p className="text-brand-400 font-black uppercase tracking-[0.3em] text-xs mt-1">Menú Digital Autogestionado</p>
+              </div>
+           </div>
+           <div className="text-right">
+              <p className="text-slate-400 font-black uppercase text-[10px] tracking-widest mb-1">Pedidos a domicilio</p>
+              <div className="flex items-center gap-4 bg-white/5 p-4 rounded-2xl border border-white/10">
+                 <Phone className="text-brand-500" size={24} />
+                 <span className="text-3xl font-black tracking-tighter text-white">{businessConfig.phone}</span>
+              </div>
+           </div>
+        </header>
+
+        {/* TV BODY */}
+        <div className="flex-1 flex overflow-hidden">
+          {/* SIDEBAR CATEGORÍAS */}
+          <aside className="w-1/4 border-r border-white/5 bg-slate-900/20 p-8 flex flex-col gap-4">
+             <p className="text-[10px] font-black text-slate-500 uppercase tracking-[0.4em] mb-4">Nuestras Secciones</p>
+             {groupedData.map((cat, idx) => (
+               <div key={cat.name} className={`p-6 rounded-[2rem] transition-all duration-700 flex items-center justify-between ${idx === catIndex ? 'bg-brand-600 text-white shadow-2xl scale-105 border-l-8 border-white' : 'bg-white/5 text-slate-500 opacity-40'}`}>
+                  <span className="text-xl font-black uppercase tracking-tighter">{cat.name}</span>
+                  {idx === catIndex && <ChevronRight size={24} className="animate-pulse" />}
+               </div>
+             ))}
+          </aside>
+
+          {/* GRID DE PRODUCTOS */}
+          <main className="flex-1 p-10 relative">
+             {/* Indicador de Paginación */}
+             {totalPages > 1 && (
+               <div className="absolute top-4 right-10 flex gap-2">
+                  {[...Array(totalPages)].map((_, i) => (
+                    <div key={i} className={`h-2 rounded-full transition-all duration-500 ${i === pageIndex ? 'w-12 bg-brand-500' : 'w-2 bg-white/20'}`} />
+                  ))}
+               </div>
+             )}
+
+             <div className="grid grid-cols-4 gap-8 h-full">
+                {pagedItems.map(item => (
+                  <div key={item.id + item.displayName} className={`bg-white/5 rounded-[3rem] border border-white/10 p-2 flex flex-col transition-all duration-1000 animate-in fade-in zoom-in ${item.displayStock <= 0 ? 'grayscale opacity-30' : ''}`}>
+                     <div className="aspect-[4/3] rounded-[2.5rem] overflow-hidden bg-slate-800 relative">
+                        {item.displayImage ? (
+                          <img src={item.displayImage} className="w-full h-full object-cover" alt={item.displayName} />
+                        ) : (
+                          <Package className="w-full h-full p-12 text-slate-700 opacity-20" />
+                        )}
+                        <div className="absolute bottom-4 right-4 bg-brand-600 px-6 py-2 rounded-2xl shadow-2xl border border-white/20">
+                           <span className="text-2xl font-black text-white">${item.displayPrice.toFixed(2)}</span>
+                        </div>
+                     </div>
+                     <div className="p-6 flex-1 flex flex-col justify-center">
+                        <h3 className="text-xl font-black uppercase tracking-tighter leading-tight line-clamp-2 text-center">{item.displayName}</h3>
+                     </div>
+                  </div>
+                ))}
+                {/* Rellenar espacios vacíos si hay pocos productos para mantener layout grande */}
+                {pagedItems.length < itemsPerPage && [...Array(itemsPerPage - pagedItems.length)].map((_, i) => (
+                  <div key={`empty-${i}`} className="bg-white/[0.02] border border-dashed border-white/5 rounded-[3rem]" />
+                ))}
+             </div>
+          </main>
+        </div>
+
+        {/* TV FOOTER (Información Legal/Firma) */}
+        <footer className="h-10 bg-brand-600 flex items-center px-12 shrink-0">
+            {/* Fix: Use the casted Marquee component to avoid TypeScript errors with the legacy tag */}
+            <Marquee className="text-[10px] font-black uppercase tracking-widest text-slate-950">
+              {businessConfig.footerMessage} • PRECIOS SUJETOS A CAMBIO SIN PREVIO AVISO • MENÚ DIGITAL POWERED BY CAPIBARIO TPV • DISFRUTE SU ESTANCIA
+            </Marquee>
+        </footer>
+      </div>
+    );
+  }
+
+  // --- RENDER MODO MÓVIL (Existente, optimizado levemente) ---
   return (
     <div className="min-h-screen bg-slate-50 font-sans selection:bg-brand-500 selection:text-white pb-20">
-      {/* HEADER PUBLICO */}
       <header className="bg-white border-b border-gray-200 sticky top-0 z-50 shadow-sm">
         <div className="max-w-7xl mx-auto px-6 py-4 flex flex-col md:flex-row justify-between items-center gap-4">
           <div className="flex items-center gap-4">
@@ -84,7 +213,7 @@ export const WebCatalogView: React.FC = () => {
           </div>
           <div className="hidden lg:flex items-center gap-2 px-5 py-2 bg-brand-50 rounded-xl border border-brand-100">
              <Sparkles size={14} className="text-brand-500" />
-             <span className="text-[9px] font-black text-brand-700 uppercase tracking-[0.2em]">Menú Digital Oficial</span>
+             <span className="text-[9px] font-black text-brand-700 uppercase tracking-[0.2em]">Menú Digital Online</span>
           </div>
         </div>
       </header>
@@ -93,115 +222,40 @@ export const WebCatalogView: React.FC = () => {
         {flattenedProducts.length === 0 ? (
           <div className="py-32 text-center bg-white rounded-[4rem] border border-dashed border-gray-200">
             <Package size={80} className="mx-auto text-slate-200 mb-6" />
-            <h2 className="text-xl font-black text-slate-300 uppercase tracking-widest">Catálogo vacío en este momento</h2>
+            <h2 className="text-xl font-black text-slate-300 uppercase tracking-widest">Catálogo vacío</h2>
           </div>
         ) : (
-          <div className="space-y-24">
-            {Object.entries(groupedProducts).map(([category, items]) => (
-              <CategoryCarousel key={category} title={category} items={items} />
+          <div className="space-y-20">
+            {groupedData.map(group => (
+              <section key={group.name} className="animate-in slide-in-from-bottom-8">
+                <h2 className="text-3xl font-black text-slate-900 uppercase tracking-tighter mb-8 px-2 border-l-8 border-brand-500 pl-6">{group.name}</h2>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-8">
+                  {group.items.map(item => (
+                    <div key={item.id + item.displayName} className={`bg-white rounded-[3rem] overflow-hidden shadow-sm border border-gray-100 group transition-all duration-500 ${item.displayStock <= 0 ? 'grayscale opacity-50' : 'hover:shadow-2xl'}`}>
+                      <div className="aspect-[4/5] bg-gray-100 relative overflow-hidden">
+                        {item.displayImage ? (
+                          <img src={item.displayImage} className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110" alt={item.displayName} />
+                        ) : (
+                          <div className="w-full h-full flex items-center justify-center text-slate-300"><Package size={64} className="opacity-20" /></div>
+                        )}
+                        <div className="absolute bottom-6 left-6 right-6">
+                           <div className="bg-white/90 backdrop-blur-xl px-6 py-4 rounded-[2rem] shadow-2xl border border-white/20 flex justify-between items-center">
+                              <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Precio</span>
+                              <span className="text-xl font-black text-brand-600 tracking-tighter">${item.displayPrice.toFixed(2)}</span>
+                           </div>
+                        </div>
+                      </div>
+                      <div className="p-8">
+                        <h3 className="font-black text-slate-800 uppercase tracking-tighter text-lg leading-tight group-hover:text-brand-600 transition-colors line-clamp-2">{item.displayName}</h3>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </section>
             ))}
           </div>
         )}
       </main>
-
-      <footer className="max-w-7xl mx-auto px-6 mt-32">
-        <div className="bg-slate-900 rounded-[4rem] p-12 md:p-20 text-center text-white shadow-2xl relative overflow-hidden">
-          <div className="absolute top-0 right-0 p-20 opacity-5 pointer-events-none">
-             <ShoppingBag size={300} />
-          </div>
-          <p className="text-[10px] font-black uppercase tracking-[0.4em] text-brand-400 mb-4">Capibario Digital Menu</p>
-          <h2 className="text-4xl font-black tracking-tighter uppercase mb-8">Gracias por su visita</h2>
-          <div className="max-w-xl mx-auto p-8 bg-white/5 rounded-3xl border border-white/10 backdrop-blur-md">
-             <p className="text-xs font-bold text-slate-400 leading-relaxed uppercase tracking-widest">
-               Este catálogo es informativo. Los precios y disponibilidad pueden variar sin previo aviso. Para pedidos a domicilio contacte al: <span className="text-white font-black underline">{businessConfig.phone}</span>
-             </p>
-          </div>
-        </div>
-      </footer>
     </div>
-  );
-};
-
-// COMPONENTE CARRUSEL POR CATEGORIA
-const CategoryCarousel: React.FC<{ title: string, items: any[] }> = ({ title, items }) => {
-  const scrollRef = useRef<HTMLDivElement>(null);
-  const [showLeft, setShowLeft] = useState(false);
-  const [showRight, setShowRight] = useState(items.length > 4);
-
-  const scroll = (direction: 'LEFT' | 'RIGHT') => {
-    if (!scrollRef.current) return;
-    const cardWidth = 320; // Aproximado con gap
-    const scrollAmount = direction === 'LEFT' ? -cardWidth : cardWidth;
-    scrollRef.current.scrollBy({ left: scrollAmount, behavior: 'smooth' });
-  };
-
-  const handleScroll = () => {
-    if (!scrollRef.current) return;
-    const { scrollLeft, scrollWidth, clientWidth } = scrollRef.current;
-    setShowLeft(scrollLeft > 10);
-    setShowRight(scrollLeft + clientWidth < scrollWidth - 10);
-  };
-
-  return (
-    <section className="relative group animate-in slide-in-from-bottom-8 duration-700">
-      <div className="flex items-end justify-between mb-8 px-2">
-        <div>
-           <p className="text-[10px] font-black text-brand-500 uppercase tracking-[0.3em] mb-1">Sección</p>
-           <h2 className="text-3xl font-black text-slate-900 uppercase tracking-tighter">{title}</h2>
-        </div>
-        <div className="flex gap-2">
-           <button 
-             onClick={() => scroll('LEFT')}
-             className={`p-3 rounded-2xl bg-white shadow-xl border border-gray-100 transition-all ${showLeft ? 'opacity-100' : 'opacity-20 cursor-default'}`}
-           >
-             <ChevronLeft size={20} className="text-slate-900" />
-           </button>
-           <button 
-             onClick={() => scroll('RIGHT')}
-             className={`p-3 rounded-2xl bg-white shadow-xl border border-gray-100 transition-all ${showRight ? 'opacity-100' : 'opacity-20 cursor-default'}`}
-           >
-             <ChevronRight size={20} className="text-slate-900" />
-           </button>
-        </div>
-      </div>
-
-      <div 
-        ref={scrollRef}
-        onScroll={handleScroll}
-        className="flex gap-6 overflow-x-auto scrollbar-hide pb-8 snap-x snap-mandatory scroll-smooth px-2"
-      >
-        {items.map(item => (
-          <div 
-            key={item.id + (item.displayName || '')} 
-            className="w-[280px] md:w-[300px] shrink-0 snap-start bg-white rounded-[3rem] overflow-hidden shadow-sm border border-gray-100 hover:shadow-2xl transition-all duration-500 flex flex-col group/card"
-          >
-            <div className="aspect-[4/5] bg-gray-100 relative overflow-hidden">
-              {item.displayImage ? (
-                <img src={item.displayImage} className="w-full h-full object-cover transition-transform duration-700 group-hover/card:scale-110" alt={item.displayName} />
-              ) : (
-                <div className="w-full h-full flex items-center justify-center text-slate-300">
-                  <Package size={64} className="opacity-20" />
-                </div>
-              )}
-              {/* Badge de Precio Flotante */}
-              <div className="absolute bottom-6 left-6 right-6">
-                 <div className="bg-white/80 backdrop-blur-xl px-6 py-4 rounded-[2rem] shadow-2xl border border-white/20 flex justify-between items-center animate-in fade-in slide-in-from-bottom-2">
-                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Precio</span>
-                    <span className="text-xl font-black text-brand-600 tracking-tighter">${item.displayPrice.toFixed(2)}</span>
-                 </div>
-              </div>
-            </div>
-            <div className="p-8 flex-1 flex flex-col justify-between">
-              <h3 className="font-black text-slate-800 uppercase tracking-tighter text-lg leading-tight group-hover/card:text-brand-600 transition-colors line-clamp-2">
-                {item.displayName}
-              </h3>
-              <div className="mt-4 pt-4 border-t border-gray-50">
-                 <p className="text-[8px] font-black text-slate-300 uppercase tracking-widest">Disponible para pedido</p>
-              </div>
-            </div>
-          </div>
-        ))}
-      </div>
-    </section>
   );
 };
