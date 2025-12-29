@@ -6,10 +6,9 @@ import {
   Plus, MapPin, Lock, X, AlertTriangle, Edit3, Save, Package, Tag, Layers, Search, 
   Camera, Barcode, Trash2, History, ChevronRight, Calculator, Calendar, Info, ShieldAlert,
   ArrowRight, DollarSign, List, Sparkles, Zap, Crown, ChevronDown, ChevronUp, Check, EyeOff, Eye, Square, CheckSquare,
-  Truck, ArrowUpRight
+  Truck, ArrowUpRight, Download, FileSpreadsheet, Upload, FileText, AlertCircle
 } from 'lucide-react';
-
-const COLORS = ['#0ea5e9', '#ef4444', '#10b981', '#f59e0b', '#6366f1', '#ec4899', '#64748b', '#000000'];
+import * as XLSX from 'xlsx';
 
 const generateUniqueId = () => {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
@@ -52,6 +51,13 @@ export const Inventory: React.FC = () => {
   const [stockEntryTarget, setStockEntryTarget] = useState<'PARENT' | string | null>(null);
   const [stockEntryData, setStockEntryData] = useState({ qty: 1, unitCost: 0, supplier: '', note: '' });
 
+  // --- ESTADOS EXCEL & IMPORT ---
+  const [isImportModalOpen, setIsImportModalOpen] = useState(false);
+  const [importRows, setImportRows] = useState<any[]>([]);
+  const [importSummary, setImportSummary] = useState({ new: 0, update: 0, error: 0 });
+  const [isProcessingImport, setIsProcessingImport] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
   // --- ESTADOS MERMA ---
   const [isWasteModalOpen, setIsWasteModalOpen] = useState(false);
   const [wasteSearch, setWasteSearch] = useState('');
@@ -75,6 +81,204 @@ export const Inventory: React.FC = () => {
     const parentStock = p.stock || 0;
     const variantsStock = p.variants?.reduce((acc, v) => acc + (v.stock || 0), 0) || 0;
     return parentStock + variantsStock;
+  };
+
+  // --- LÓGICA EXCEL: DESCARGAR PLANTILLA ---
+  const downloadTemplate = () => {
+    const headers = ["ID", "Nombre", "SKU", "Categorias", "Precio", "Costo", "Stock", "Vencimiento", "Es_Variante", "ID_Padre"];
+    const example = ["", "Producto Ejemplo", "SKU-001", "Alimentos, Otros", 100, 70, 50, "2025-12-31", "NO", ""];
+    
+    const ws = XLSX.utils.aoa_to_sheet([headers, example]);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Inventario");
+
+    // Hoja de Instrucciones
+    const insHeaders = ["REGLA", "DESCRIPCIÓN"];
+    const insData = [
+      ["ID", "Dejar vacío para crear nuevo. Usar ID existente para actualizar."],
+      ["SKU", "Obligatorio y único. Si coincide con uno existente, se actualiza."],
+      ["Categorias", "Separadas por comas."],
+      ["Stock/Precio/Costo", "Números positivos obligatorios."],
+      ["Es_Variante", "Escribir SI o NO."],
+      ["ID_Padre", "Solo para variantes: El ID del producto base."]
+    ];
+    const wsIns = XLSX.utils.aoa_to_sheet([insHeaders, ...insData]);
+    XLSX.utils.book_append_sheet(wb, wsIns, "Instrucciones");
+
+    XLSX.writeFile(wb, "Capibario_Inventario_Plantilla.xlsx");
+    notify("Plantilla descargada", "success");
+  };
+
+  // --- LÓGICA EXCEL: EXPORTAR ---
+  const exportInventory = () => {
+    const dataToExport: any[] = [];
+    
+    filteredProducts.forEach(p => {
+      // Agregar Producto Base
+      dataToExport.push({
+        ID: p.id,
+        Nombre: p.name,
+        SKU: p.sku,
+        Categorias: p.categories?.join(", "),
+        Precio: p.price,
+        Costo: p.cost,
+        Stock: p.stock,
+        Vencimiento: p.expiryDate || "",
+        Es_Variante: "NO",
+        ID_Padre: ""
+      });
+
+      // Agregar Variantes como filas independientes para edición
+      p.variants?.forEach(v => {
+        dataToExport.push({
+          ID: v.id,
+          Nombre: `${p.name} - ${v.name}`,
+          SKU: v.sku,
+          Categorias: p.categories?.join(", "),
+          Precio: v.price,
+          Costo: v.cost,
+          Stock: v.stock,
+          Vencimiento: v.expiryDate || "",
+          Es_Variante: "SI",
+          ID_Padre: p.id
+        });
+      });
+    });
+
+    const ws = XLSX.utils.json_to_sheet(dataToExport);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Inventario");
+    XLSX.writeFile(wb, `Inventario_${activeWarehouse.name}_${new Date().toISOString().split('T')[0]}.xlsx`);
+    notify("Exportación completada", "success");
+  };
+
+  // --- LÓGICA EXCEL: IMPORTAR (PARSE) ---
+  const handleImportFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      const bstr = evt.target?.result;
+      const wb = XLSX.read(bstr, { type: 'binary' });
+      const wsname = wb.SheetNames[0];
+      const ws = wb.Sheets[wsname];
+      const data = XLSX.utils.sheet_to_json(ws);
+
+      // Validar y Previsualizar
+      const validated: any[] = [];
+      let n = 0, u = 0, er = 0;
+
+      data.forEach((row: any, index) => {
+        const errorMsg: string[] = [];
+        
+        // Reglas de validación básica
+        if (!row.Nombre) errorMsg.push("Nombre faltante");
+        if (!row.SKU) errorMsg.push("SKU faltante");
+        if (isNaN(row.Precio) || row.Precio < 0) errorMsg.push("Precio inválido");
+        if (isNaN(row.Costo) || row.Costo < 0) errorMsg.push("Costo inválido");
+        if (isNaN(row.Stock) || row.Stock < 0) errorMsg.push("Stock inválido");
+
+        const existsById = row.ID ? products.some(p => p.id === row.ID || p.variants.some(v => v.id === row.ID)) : false;
+        const existsBySku = products.some(p => p.sku === row.SKU || p.variants.some(v => v.sku === row.SKU));
+        
+        const type = existsById || existsBySku ? 'UPDATE' : 'NEW';
+        if (errorMsg.length > 0) {
+          er++;
+        } else if (type === 'NEW') {
+          n++;
+        } else {
+          u++;
+        }
+
+        validated.push({
+          ...row,
+          _type: type,
+          _errors: errorMsg.join(", "),
+          _rowIdx: index + 2
+        });
+      });
+
+      setImportRows(validated);
+      setImportSummary({ new: n, update: u, error: er });
+      setIsImportModalOpen(true);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    };
+    reader.readAsBinaryString(file);
+  };
+
+  // --- LÓGICA EXCEL: APLICAR IMPORTACIÓN ---
+  const applyImport = async () => {
+    setIsProcessingImport(true);
+    let successCount = 0;
+
+    const validRows = importRows.filter(r => !r._errors);
+    
+    for (const row of validRows) {
+      try {
+        const isVariant = row.Es_Variante === "SI" || row.Es_Variante === "TRUE";
+        const rowCategories = row.Categorias ? row.Categorias.split(",").map((c: string) => c.trim()) : ["Catálogo"];
+        
+        if (isVariant && row.ID_Padre) {
+          // Actualizar o Añadir variante a un producto existente
+          const parent = products.find(p => p.id === row.ID_Padre);
+          if (parent) {
+            const variantExists = parent.variants.find(v => v.id === row.ID || v.sku === row.SKU);
+            const newVariant: ProductVariant = {
+              id: variantExists?.id || row.ID || generateUniqueId(),
+              name: row.Nombre.replace(`${parent.name} - `, ""),
+              sku: row.SKU,
+              price: row.Precio,
+              cost: row.Costo,
+              stock: row.Stock,
+              expiryDate: row.Vencimiento || undefined,
+              color: variantExists?.color || generateVariantColor()
+            };
+
+            const updatedVariants = variantExists 
+              ? parent.variants.map(v => v.id === newVariant.id ? newVariant : v)
+              : [...parent.variants, newVariant];
+
+            updateProduct({ ...parent, variants: updatedVariants });
+          }
+        } else {
+          // Producto Base
+          const existing = products.find(p => p.id === row.ID || p.sku === row.SKU);
+          const newProd: Product = {
+            id: existing?.id || row.ID || generateUniqueId(),
+            warehouseId: activeWarehouseId,
+            name: row.Nombre,
+            sku: row.SKU,
+            price: row.Precio,
+            cost: row.Costo,
+            stock: row.Stock,
+            expiryDate: row.Vencimiento || undefined,
+            categories: rowCategories,
+            variants: existing?.variants || [],
+            pricingRules: existing?.pricingRules || [],
+            minStockAlert: existing?.minStockAlert || 5,
+            history: existing?.history || [{
+              id: generateUniqueId(),
+              timestamp: new Date().toISOString(),
+              type: 'CREATED',
+              userName: currentUser?.name || 'Sistema (Excel)',
+              details: 'Importado desde archivo Excel'
+            }]
+          };
+
+          if (existing) updateProduct(newProd);
+          else addProduct(newProd);
+        }
+        successCount++;
+      } catch (err) {
+        console.error("Error importando fila:", row, err);
+      }
+    }
+
+    notify(`Importación finalizada: ${successCount} registros procesados`, "success");
+    setIsImportModalOpen(false);
+    setIsProcessingImport(false);
+    setImportRows([]);
   };
 
   const handleOpenNewProduct = () => {
@@ -435,6 +639,7 @@ export const Inventory: React.FC = () => {
     if (ruleDraft.startDate && ruleDraft.endDate && new Date(ruleDraft.endDate) <= new Date(ruleDraft.startDate)) {
         notify("La fecha de fin debe ser posterior a la de inicio", "error"); return;
     }
+    // Fix: Reference correct ruleDraft properties instead of non-existent 'row'
     if (checkRuleOverlap(ruleDraft.minQuantity, ruleDraft.maxQuantity, ruleDraft.targetId, editingProduct.pricingRules, ruleDraft.startDate, ruleDraft.endDate)) {
         notify("Conflicto: El rango de cantidad y tiempo se solapa con una regla activa.", "error"); return;
     }
@@ -612,6 +817,20 @@ export const Inventory: React.FC = () => {
           </div>
         </div>
         <div className="flex flex-wrap gap-2 w-full md:w-auto">
+            {/* HERRAMIENTAS EXCEL */}
+            <div className="flex gap-2 p-1.5 bg-white rounded-2xl border border-gray-200 shadow-sm">
+                <button onClick={downloadTemplate} title="Descargar Plantilla" className="p-3 text-slate-400 hover:text-brand-500 transition-colors">
+                    <FileText size={18} />
+                </button>
+                <button onClick={exportInventory} title="Exportar a Excel" className="p-3 text-slate-400 hover:text-emerald-500 transition-colors">
+                    <Download size={18} />
+                </button>
+                <button onClick={() => fileInputRef.current?.click()} title="Importar desde Excel" className="p-3 text-slate-400 hover:text-brand-500 transition-colors">
+                    <Upload size={18} />
+                </button>
+                <input ref={fileInputRef} type="file" accept=".xlsx" className="hidden" onChange={handleImportFile} />
+            </div>
+
             <button onClick={() => setIsCatManagerOpen(true)} className="flex-1 md:flex-none bg-white border border-gray-200 text-slate-600 px-6 py-3 rounded-2xl font-black flex items-center justify-center gap-2 hover:bg-gray-50 transition-all uppercase text-[10px] tracking-widest shadow-sm">
                 <Layers size={16} /> Categorías
             </button>
@@ -623,6 +842,84 @@ export const Inventory: React.FC = () => {
             </button>
         </div>
       </div>
+
+      {/* MODAL IMPORTACIÓN EXCEL */}
+      {isImportModalOpen && (
+          <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-md flex items-center justify-center z-[300] p-4 animate-in fade-in">
+              <div className="bg-white rounded-[4rem] w-full max-w-6xl h-[85vh] flex flex-col shadow-2xl overflow-hidden animate-in zoom-in">
+                  <div className="p-8 bg-slate-900 text-white flex justify-between items-center shrink-0">
+                      <div>
+                          <h2 className="text-2xl font-black uppercase tracking-tighter flex items-center gap-3"><FileSpreadsheet size={24}/> Importar Inventario</h2>
+                          <p className="text-[10px] text-brand-400 font-bold uppercase tracking-widest">Previsualización de cambios detectados</p>
+                      </div>
+                      <button onClick={() => setIsImportModalOpen(false)} className="p-3 bg-white/10 rounded-2xl"><X size={20}/></button>
+                  </div>
+
+                  <div className="p-8 grid grid-cols-1 md:grid-cols-3 gap-6 bg-gray-50 border-b border-gray-100">
+                      <div className="bg-white p-6 rounded-3xl shadow-sm border border-emerald-100 flex items-center gap-4">
+                          <div className="p-3 bg-emerald-50 text-emerald-600 rounded-xl"><Plus size={20}/></div>
+                          <div><p className="text-[9px] font-black text-slate-400 uppercase">Nuevos</p><p className="text-2xl font-black text-emerald-600">{importSummary.new}</p></div>
+                      </div>
+                      <div className="bg-white p-6 rounded-3xl shadow-sm border border-brand-100 flex items-center gap-4">
+                          <div className="p-3 bg-brand-50 text-brand-600 rounded-xl"><Edit3 size={20}/></div>
+                          <div><p className="text-[9px] font-black text-slate-400 uppercase">Actualizaciones</p><p className="text-2xl font-black text-brand-600">{importSummary.update}</p></div>
+                      </div>
+                      <div className="bg-white p-6 rounded-3xl shadow-sm border border-red-100 flex items-center gap-4">
+                          <div className="p-3 bg-red-50 text-red-600 rounded-xl"><AlertCircle size={20}/></div>
+                          <div><p className="text-[9px] font-black text-slate-400 uppercase">Errores</p><p className="text-2xl font-black text-red-600">{importSummary.error}</p></div>
+                      </div>
+                  </div>
+
+                  <div className="flex-1 overflow-auto p-4 custom-scrollbar">
+                      <table className="w-full text-left">
+                          <thead className="sticky top-0 bg-white shadow-sm z-10">
+                              <tr className="text-[10px] font-black uppercase text-slate-400 tracking-widest border-b">
+                                  <th className="p-4">Fila</th>
+                                  <th className="p-4">SKU</th>
+                                  <th className="p-4">Nombre</th>
+                                  <th className="p-4">Tipo</th>
+                                  <th className="p-4">Estado</th>
+                                  <th className="p-4">Errores</th>
+                              </tr>
+                          </thead>
+                          <tbody className="divide-y divide-gray-50">
+                              {importRows.map((r, i) => (
+                                  <tr key={i} className={`text-[10px] font-bold ${r._errors ? 'bg-red-50' : ''}`}>
+                                      <td className="p-4 text-slate-400">#{r._rowIdx}</td>
+                                      <td className="p-4 uppercase">{r.SKU}</td>
+                                      <td className="p-4 truncate max-w-[200px] uppercase">{r.Nombre}</td>
+                                      <td className="p-4">
+                                          <span className={`px-2 py-0.5 rounded-full ${r.Es_Variante === "SI" ? 'bg-slate-200 text-slate-600' : 'bg-brand-50 text-brand-600'}`}>
+                                              {r.Es_Variante === "SI" ? 'VARIANTE' : 'PRODUCTO'}
+                                          </span>
+                                      </td>
+                                      <td className="p-4">
+                                          {r._type === 'NEW' ? (
+                                              <span className="text-emerald-500 font-black">CREAR</span>
+                                          ) : (
+                                              <span className="text-brand-500 font-black">ACTUALIZAR</span>
+                                          )}
+                                      </td>
+                                      <td className="p-4 text-red-500 font-black italic">{r._errors}</td>
+                                  </tr>
+                              ))}
+                          </tbody>
+                      </table>
+                  </div>
+
+                  <div className="p-8 border-t border-gray-100 flex justify-end gap-4">
+                      <button onClick={() => setIsImportModalOpen(false)} className="px-10 py-5 bg-gray-100 text-slate-400 rounded-3xl font-black uppercase text-xs">Cancelar</button>
+                      <button 
+                        disabled={isProcessingImport || importSummary.new + importSummary.update === 0} 
+                        onClick={applyImport} 
+                        className="px-16 py-5 bg-slate-900 text-white rounded-3xl font-black uppercase text-xs tracking-widest hover:bg-brand-600 shadow-xl disabled:opacity-50"
+                      >
+                        {isProcessingImport ? 'Procesando...' : 'Aplicar Válidos'}
+                      </button>
+                  </div>
+              </div>
+          </div>
+      )}
 
       <div className="flex gap-2 overflow-x-auto pb-4 mb-8 scrollbar-hide border-b border-gray-100">
         {warehouses.map((w, idx) => {
