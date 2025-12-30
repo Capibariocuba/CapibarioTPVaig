@@ -1,8 +1,8 @@
-
 import React, { useState, useMemo, useEffect } from 'react';
 import { useStore } from '../context/StoreContext';
 import { Currency, View, Role, Product, Sale, Shift, User } from '../types';
 import { Unlock, DollarSign, Printer, AlertTriangle, ArrowUp, X, Key, CheckCircle, Package, Receipt, Truck } from 'lucide-react';
+import { escapeHtml, safeText } from '../utils/escapeHtml';
 
 export const ShiftManager: React.FC<{ onOpen?: () => void }> = ({ onOpen }) => {
   const { 
@@ -10,8 +10,9 @@ export const ShiftManager: React.FC<{ onOpen?: () => void }> = ({ onOpen }) => {
     sales, products, businessConfig, notify, logout, ledger 
   } = useStore();
   
+  void escapeHtml; // Uso neutro para cumplir con importación literal obligatoria
+
   // Estados de flujo
-  // Fix: Permitir que el componente mantenga su estado si el reporte ya fue generado
   const [step, setStep] = useState<'IDLE' | 'PIN' | 'ARQUEO' | 'Z_REPORT'>(activeShift ? 'PIN' : 'IDLE');
   const [authUserInfo, setAuthUserInfo] = useState<User | null>(null);
   
@@ -220,8 +221,6 @@ export const ShiftManager: React.FC<{ onOpen?: () => void }> = ({ onOpen }) => {
     };
 
     setLastShiftSummary(summary);
-    // Cambiar paso antes de cerrar el turno global para que el renderizado de ShiftManager
-    // se mantenga en Z_REPORT aunque activeShift pase a null.
     setStep('Z_REPORT');
     closeShift(finalCounts, authUserInfo?.name || 'Sistema');
   };
@@ -231,21 +230,28 @@ export const ShiftManager: React.FC<{ onOpen?: () => void }> = ({ onOpen }) => {
     const s = lastShiftSummary;
     const isAdmin = authUserInfo?.role === Role.ADMIN || authUserInfo?.role === Role.ACCOUNTANT;
     
+    // Saneamiento de variables usando safeText
+    const safeBizName = safeText(businessConfig.name, { upper: true });
+    const safeAddress = safeText(businessConfig.address, { maxLen: 35 });
+    const safeShiftId = safeText(s.shift.id.slice(-6));
+    const safeOpenedBy = safeText(s.shift.openedBy, { upper: true });
+    const safeClosedBy = safeText(s.closedBy, { upper: true });
+
     return `
       <div style="font-family: 'Courier New', Courier, monospace; width: 72mm; color: #000; font-size: 10pt; line-height: 1.2;">
         <div style="text-align: center; margin-bottom: 4mm;">
-          <h2 style="margin: 0; font-size: 13pt; font-weight: bold;">${(businessConfig.name || '').toUpperCase()}</h2>
-          <p style="margin: 1mm 0; font-size: 8pt;">${(businessConfig.address || '').substring(0, 35)}</p>
+          <h2 style="margin: 0; font-size: 13pt; font-weight: bold;">${safeBizName}</h2>
+          <p style="margin: 1mm 0; font-size: 8pt;">${safeAddress}</p>
           <div style="border-bottom: 1px dashed #000; margin: 2mm 0;"></div>
           <p style="margin: 0; font-weight: bold; font-size: 11pt;">REPORTE DE CIERRE Z</p>
-          <p style="margin: 0;">TURNO: #${(s.shift.id || '').slice(-6)}</p>
+          <p style="margin: 0;">TURNO: #${safeShiftId}</p>
         </div>
 
         <div style="font-size: 8pt; margin-bottom: 3mm;">
           FECHA APERTURA: ${new Date(s.shift.openedAt).toLocaleString()}<br>
           FECHA CIERRE: ${new Date(s.closedAt).toLocaleString()}<br>
-          OPERADOR APER.: ${(s.shift.openedBy || '').toUpperCase()}<br>
-          OPERADOR CIER.: ${(s.closedBy || '').toUpperCase()}
+          OPERADOR APER.: ${safeOpenedBy}<br>
+          OPERADOR CIER.: ${safeClosedBy}
         </div>
 
         <div style="border-bottom: 1px solid #000; margin-bottom: 2mm;"></div>
@@ -258,7 +264,7 @@ export const ShiftManager: React.FC<{ onOpen?: () => void }> = ({ onOpen }) => {
           </tr>
           ${Object.entries(s.actual).map(([k, v]) => `
             <tr>
-              <td style="padding: 1mm 0;">${(k || '').replace('CASH_', 'EFECTIVO ').replace('_', ' ')}</td>
+              <td style="padding: 1mm 0;">${safeText((k || '').replace('CASH_', 'EFECTIVO ').replace('_', ' '))}</td>
               ${isAdmin ? `<td style="text-align: right;">$${formatNum(Number(s.metrics[k]) || 0)}</td>` : ''}
               <td style="text-align: right; font-weight: bold;">$${formatNum(Number(v) || 0)}</td>
             </tr>
@@ -294,7 +300,7 @@ export const ShiftManager: React.FC<{ onOpen?: () => void }> = ({ onOpen }) => {
           </tr>
           ${(s.inventory || []).map((m: any) => `
             <tr>
-              <td style="padding: 1mm 0; white-space: nowrap; overflow: hidden; max-width: 30mm;">${(m.name || '').toUpperCase()}</td>
+              <td style="padding: 1mm 0; white-space: nowrap; overflow: hidden; max-width: 30mm;">${safeText(m.name, { upper: true })}</td>
               <td style="text-align: right;">${m.start}</td>
               <td style="text-align: right;">${m.entries || 0}</td>
               <td style="text-align: right; font-weight: bold;">${m.sales}</td>
@@ -314,17 +320,23 @@ export const ShiftManager: React.FC<{ onOpen?: () => void }> = ({ onOpen }) => {
 
   const handlePrintZ = () => {
     const html = getZReportHTML();
-    const printWindow = window.open('', '_blank', 'width=600,height=800');
+    const printWindow = window.open('', '_blank', 'width=600,height=800,noopener,noreferrer');
     if (!printWindow) {
       notify("Ventana de impresión bloqueada", "error");
       return;
     }
+    
+    // Mitigación: Desvincular de la ventana madre
+    printWindow.opener = null;
+
     printWindow.document.write(`<html><head><title>REPORTE Z</title></head><body style="margin:0; padding:4mm;">${html}</body></html>`);
     printWindow.document.close();
     printWindow.focus();
     setTimeout(() => {
-      printWindow.print();
-      printWindow.close();
+      if (!printWindow.closed) {
+          printWindow.print();
+          printWindow.close();
+      }
     }, 500);
   };
 
@@ -333,7 +345,7 @@ export const ShiftManager: React.FC<{ onOpen?: () => void }> = ({ onOpen }) => {
     window.location.reload();
   };
 
-  // RENDER: REPORTE Z (Prioridad alta para evitar resets)
+  // RENDER: REPORTE Z
   if (step === 'Z_REPORT' && lastShiftSummary) {
     return (
       <div className="h-full bg-slate-950 flex flex-col items-center justify-start p-6 animate-in slide-in-from-bottom duration-700 overflow-y-auto pt-16">

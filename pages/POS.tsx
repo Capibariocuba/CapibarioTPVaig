@@ -8,6 +8,7 @@ import { PaymentModal } from '../components/PaymentModal';
 import { Currency, Ticket, Product, PaymentDetail, Coupon, ProductVariant, Client, View, BogoOffer, Sale, RefundItem, User, Role } from '../types';
 import { ShiftManager } from './ShiftManager';
 import { jsPDF } from 'jspdf';
+import { escapeHtml, safeText } from '../utils/escapeHtml';
 
 export const POS: React.FC = () => {
   const { 
@@ -19,6 +20,8 @@ export const POS: React.FC = () => {
     sales, processRefund, validatePin
   } = useStore();
   
+  void escapeHtml; // Uso neutro para cumplir con importación literal obligatoria
+
   // --- UTILIDADES DE PRECISIÓN ---
   const round2 = (num: number) => Math.round((num + Number.EPSILON) * 100) / 100;
   const formatNum = (num: number) => new Intl.NumberFormat('es-CU', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(num);
@@ -213,17 +216,26 @@ export const POS: React.FC = () => {
 
   const removeCoupon = () => { setAppliedCoupon(null); notify("Cupón removido", "success"); };
 
-  // --- IMPRESIÓN ---
+  // --- IMPRESIÓN SEGURA ---
   const printRawHTML = (html: string) => {
-    const printWindow = window.open('', '_blank', 'width=600,height=800');
+    const printWindow = window.open('', '_blank', 'width=600,height=800,noopener,noreferrer');
     if (!printWindow) { notify("Habilite ventanas emergentes para imprimir", "error"); return; }
+    
+    // Mitigación: Desvincular de la ventana madre para evitar manipulaciones
+    printWindow.opener = null;
+
     printWindow.document.write(`
       <html><head><title>Imprimir Ticket</title><style>@page { size: 80mm auto; margin: 0; } body { margin: 0; padding: 4mm; font-family: 'Courier New', Courier, monospace; font-size: 10pt; color: #000; width: 72mm; } .center { text-align: center; } .right { text-align: right; } .bold { font-weight: bold; } .dashed { border-top: 1px dashed #000; margin: 3mm 0; } table { width: 100%; border-collapse: collapse; margin: 2mm 0; } th, td { text-align: left; vertical-align: top; padding: 1mm 0; } .col-desc { width: 45%; overflow: hidden; } .col-qty { width: 15%; text-align: center; } .col-total { width: 40%; text-align: right; white-space: nowrap; } </style></head>
       <body>${html}</body></html>
     `);
     printWindow.document.close();
     printWindow.focus();
-    setTimeout(() => { printWindow.print(); printWindow.close(); }, 500);
+    setTimeout(() => { 
+        if (!printWindow.closed) {
+            printWindow.print(); 
+            printWindow.close(); 
+        }
+    }, 500);
   };
 
   const getTicketHTML = (ticket: Ticket | Sale) => {
@@ -235,13 +247,22 @@ export const POS: React.FC = () => {
     const rate = rates[ticket.currency] || 1;
     const changeCUP = overpay > 0.0001 ? round2(overpay * rate) : 0;
 
+    // Saneamiento de variables dinámicas usando safeText (trunca ANTES de escapar)
+    const safeBizName = safeText(businessConfig.name, { upper: true });
+    const safeAddress = safeText(businessConfig.address);
+    const safePhone = safeText(businessConfig.phone);
+    const safeTicketId = safeText(ticket.id.slice(-6));
+    const safeSeller = safeText(ticket.sellerName || 'SISTEMA', { upper: true });
+    const safeClient = safeText(client?.name || 'CONSUMIDOR FINAL', { upper: true });
+    const safeFooter = safeText(businessConfig.footerMessage, { upper: true });
+
     return `
-      <div class="center"><h2 class="bold" style="margin:0; font-size: 14pt;">${businessConfig.name.toUpperCase()}</h2><p style="margin:1mm 0; font-size: 8pt;">${businessConfig.address}<br>Tel: ${businessConfig.phone}</p><p class="bold" style="font-size: 9pt; margin-top: 2mm;">TICKET: #${ticket.id.slice(-6)}</p></div>
+      <div class="center"><h2 class="bold" style="margin:0; font-size: 14pt;">${safeBizName}</h2><p style="margin:1mm 0; font-size: 8pt;">${safeAddress}<br>Tel: ${safePhone}</p><p class="bold" style="font-size: 9pt; margin-top: 2mm;">TICKET: #${safeTicketId}</p></div>
       <div class="dashed"></div>
-      <div style="font-size: 8pt; line-height: 1.4;">FECHA: ${dateStr}<br>VENDEDOR: ${(ticket.sellerName || 'SISTEMA').toUpperCase()}<br>${client ? `CLIENTE: ${client.name.toUpperCase()}` : 'CLIENTE: CONSUMIDOR FINAL'}</div>
+      <div style="font-size: 8pt; line-height: 1.4;">FECHA: ${dateStr}<br>VENDEDOR: ${safeSeller}<br>CLIENTE: ${safeClient}</div>
       <div class="dashed"></div>
       <table><thead><tr class="bold" style="border-bottom: 1px solid #000;"><th class="col-desc">DESC.</th><th class="col-qty">CT</th><th class="col-total">TOTAL</th></tr></thead><tbody>
-          ${ticket.items.map(i => `<tr><td class="col-desc">${i.name.toUpperCase().substring(0, 20)}</td><td class="col-qty">${i.quantity}</td><td class="col-total">${symbol}${formatNum(i.quantity * i.finalPrice / (ticket.currency === 'CUP' ? 1 : rates[ticket.currency]))}</td></tr>`).join('')}
+          ${ticket.items.map(i => `<tr><td class="col-desc">${safeText(i.name, { maxLen: 20, upper: true })}</td><td class="col-qty">${i.quantity}</td><td class="col-total">${symbol}${formatNum(i.quantity * i.finalPrice / (ticket.currency === 'CUP' ? 1 : rates[ticket.currency]))}</td></tr>`).join('')}
       </tbody></table>
       <div class="dashed"></div>
       <div style="font-size: 10pt;"><div style="display:flex; justify-content: space-between;"><span>SUBTOTAL:</span><span>${symbol}${formatNum(ticket.subtotal)}</span></div>${ticket.discount > 0 ? `<div style="display:flex; justify-content: space-between;"><span>DESC.:</span><span>-${symbol}${formatNum(ticket.discount)}</span></div>` : ''}<div style="display:flex; justify-content: space-between;" class="bold"><span>TOTAL (${ticket.currency}):</span><span>${symbol}${formatNum(ticket.total)}</span></div></div>
@@ -259,7 +280,7 @@ export const POS: React.FC = () => {
       ${(ticket as Sale).refunds?.length ? `<div class="dashed"></div><div class="center bold" style="color:red;">REEMBOLSO APLICADO</div>` : ''}
       <div class="dashed"></div>
       <div class="center" style="font-size: 8pt; margin-top: 4mm;">
-        <p class="bold">${businessConfig.footerMessage.toUpperCase()}</p>
+        <p class="bold">${safeFooter}</p>
         <p style="margin-top: 2mm; opacity: 0.5; margin-bottom: 0;">CAPIBARIO TPV</p>
         <p style="opacity: 0.5; margin: 0;">www.capibario.com</p>
       </div>
