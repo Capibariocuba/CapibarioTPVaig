@@ -6,6 +6,10 @@ import { Product } from '../types';
 
 // CONFIGURACIÓN DE PANTALLA DERECHA
 const ITEMS_PER_SCREEN = 10; // Exactamente 10 productos por pantalla
+const ANIM_DURATION = 500; // ms
+const ROW_DELAYS = [120, 0, 180, 40, 220, 80, 150, 30, 200, 100]; // Delays "regados" para el stagger
+
+type TransitionPhase = 'IDLE' | 'EXITING' | 'ENTERING';
 
 export const WebCatalogView: React.FC = () => {
   const { 
@@ -20,6 +24,10 @@ export const WebCatalogView: React.FC = () => {
   const [currentScreenIdx, setCurrentScreenIdx] = useState(0);
   const [currentSlideIdx, setCurrentSlideIdx] = useState(0);
   const [refreshTick, setRefreshTick] = useState(0);
+
+  // Estados para la animación staggered
+  const [transitionPhase, setTransitionPhase] = useState<TransitionPhase>('IDLE');
+  const [renderData, setRenderData] = useState<{ catName: string; items: Product[] } | null>(null);
 
   const rotationSeconds = businessConfig.digitalCatalogRotationSeconds || 10;
 
@@ -38,7 +46,6 @@ export const WebCatalogView: React.FC = () => {
   // 3. GENERAR TODAS LAS PANTALLAS (Solo productos con flag "Catálogo")
   const screens = useMemo(() => {
     void refreshTick;
-    // REGLA 1: Solo productos marcados con la categoría "Catálogo" y con stock > 0 y no ocultos
     const available = products.filter(p => 
         p.categories.includes('Catálogo') && 
         !p.hidden && 
@@ -46,7 +53,6 @@ export const WebCatalogView: React.FC = () => {
         ((p.stock || 0) + (p.variants?.reduce((acc, v) => acc + (v.stock || 0), 0) || 0)) > 0
     );
     
-    // REGLA 2: Agrupar por su categoría real secundaria (Excluyendo "Catálogo" de la visualización)
     const validCategoryNames = categories
         .map(c => c.name)
         .filter(n => n !== 'Catálogo');
@@ -68,7 +74,38 @@ export const WebCatalogView: React.FC = () => {
     return result;
   }, [products, activeWhId, categories, refreshTick]);
 
-  // 4. ROTACIÓN DE PANTALLAS (DERECHA)
+  // 4. LÓGICA DE TRANSICIÓN STAGGERED (Sincronización con el cambio de índice)
+  useEffect(() => {
+    const nextScreen = screens[currentScreenIdx];
+    if (!nextScreen) return;
+
+    // Si es la carga inicial, simplemente mostramos
+    if (!renderData) {
+      setRenderData(nextScreen);
+      return;
+    }
+
+    // Iniciamos fase de salida
+    setTransitionPhase('EXITING');
+
+    // Esperamos a que termine la salida (max delay + duration) para cambiar los datos
+    const exitTimer = setTimeout(() => {
+      setRenderData(nextScreen);
+      setTransitionPhase('ENTERING');
+
+      // Esperamos un frame para que el navegador registre la nueva posición inicial (izquierda)
+      // y luego pasamos a IDLE para que la transición de entrada ocurra
+      const enterTimer = setTimeout(() => {
+        setTransitionPhase('IDLE');
+      }, 50);
+
+      return () => clearTimeout(enterTimer);
+    }, 750); // Ajustado para dar margen al stagger más largo
+
+    return () => clearTimeout(exitTimer);
+  }, [currentScreenIdx, screens]);
+
+  // 5. ROTACIÓN DE PANTALLAS (DERECHA)
   useEffect(() => {
     if (screens.length <= 1) return;
     const interval = setInterval(() => {
@@ -77,7 +114,7 @@ export const WebCatalogView: React.FC = () => {
     return () => clearInterval(interval);
   }, [screens.length, rotationSeconds]);
 
-  // 5. ROTACIÓN DE SLIDESHOW (IZQUIERDA)
+  // 6. ROTACIÓN DE SLIDESHOW (IZQUIERDA)
   useEffect(() => {
     const slides = businessConfig.digitalCatalogImages || [];
     if (slides.length <= 1) return;
@@ -87,7 +124,7 @@ export const WebCatalogView: React.FC = () => {
     return () => clearInterval(interval);
   }, [businessConfig.digitalCatalogImages]);
 
-  // 6. MONEDA
+  // 7. MONEDA
   const currencySymbol = useMemo(() => {
     const curr = currencies.find(c => c.code === businessConfig.primaryCurrency);
     return curr?.symbol || '$';
@@ -103,7 +140,6 @@ export const WebCatalogView: React.FC = () => {
     );
   }
 
-  const activeScreen = screens[currentScreenIdx];
   const slides = businessConfig.digitalCatalogImages || [];
 
   return (
@@ -121,10 +157,31 @@ export const WebCatalogView: React.FC = () => {
         .slide-fade {
           transition: opacity 1.5s ease-in-out;
         }
+        
+        /* Clases de animación por listones */
+        .product-row {
+          transition: transform ${ANIM_DURATION}ms cubic-bezier(0.23, 1, 0.32, 1), opacity ${ANIM_DURATION}ms ease;
+          will-change: transform, opacity;
+        }
+        
+        .row-exiting {
+          transform: translateX(120px);
+          opacity: 0;
+        }
+        
+        .row-entering {
+          transform: translateX(-120px);
+          opacity: 0;
+        }
+        
+        .row-idle {
+          transform: translateX(0);
+          opacity: 1;
+        }
       `}</style>
 
       {/* LADO IZQUIERDO: VISUAL (Slideshow + Ticker) */}
-      <div className="w-[45%] h-full flex flex-col border-r border-white/5 bg-slate-900">
+      <div className="w-[45%] h-full flex flex-col border-r border-white/5 bg-slate-900 z-10">
         {/* Slideshow */}
         <div className="flex-1 relative overflow-hidden bg-black">
            {slides.length > 0 ? (
@@ -172,7 +229,7 @@ export const WebCatalogView: React.FC = () => {
       </div>
 
       {/* LADO DERECHO: PRODUCTOS (TEMA OSCURO + FICHAS BLANCAS) */}
-      <div className="flex-1 h-full bg-slate-950 p-8 flex flex-col">
+      <div className="flex-1 h-full bg-slate-950 p-8 flex flex-col relative">
         {/* Header Categoría (COMPACTO) */}
         <div className="mb-6 flex justify-between items-center border-b border-white/10 pb-4 shrink-0">
            <div className="flex items-center gap-5">
@@ -180,7 +237,7 @@ export const WebCatalogView: React.FC = () => {
                 <Layers size={28} />
               </div>
               <h2 className="text-4xl font-black uppercase tracking-tighter text-white">
-                {activeScreen?.catName}
+                {renderData?.catName}
               </h2>
            </div>
            <div className="text-right">
@@ -190,43 +247,52 @@ export const WebCatalogView: React.FC = () => {
 
         {/* Lista de Productos (FIX 10 FILAS) */}
         <div className="flex-1 grid grid-rows-[repeat(10,minmax(0,1fr))] gap-2 h-full overflow-hidden">
-          {activeScreen?.items.map((item, idx) => (
-            <div 
-              key={`${item.id}-${idx}`}
-              className="bg-white p-2 rounded-2xl flex items-center gap-5 hover:scale-[1.01] transition-all group animate-in slide-in-from-right duration-500 shadow-xl"
-              style={{ animationDelay: `${idx * 40}ms` }}
-            >
-              {/* Thumbnail Ampliado */}
-              <div className="h-full aspect-square rounded-xl bg-slate-100 overflow-hidden shrink-0 border border-slate-200">
-                {item.image ? (
-                  <img src={item.image} className="w-full h-full object-cover" alt={item.name} />
-                ) : (
-                  <div className="w-full h-full flex items-center justify-center text-slate-300 bg-slate-50 relative">
-                     <UtensilsCrossed size={32} className="opacity-20" />
-                     <span className="absolute inset-0 flex items-center justify-center font-black text-2xl text-slate-200 pointer-events-none uppercase">
-                        {item.name.charAt(0)}
-                     </span>
+          {(renderData?.items || []).map((item, idx) => {
+            // Determinar clase de animación según la fase
+            let animClass = 'row-idle';
+            if (transitionPhase === 'EXITING') animClass = 'row-exiting';
+            if (transitionPhase === 'ENTERING') animClass = 'row-entering';
+
+            return (
+              <div 
+                key={`${item.id}-${idx}`}
+                className={`bg-white p-2 rounded-2xl flex items-center gap-5 shadow-xl product-row ${animClass}`}
+                style={{ 
+                  transitionDelay: `${ROW_DELAYS[idx]}ms`
+                }}
+              >
+                {/* Thumbnail Ampliado */}
+                <div className="h-full aspect-square rounded-xl bg-slate-100 overflow-hidden shrink-0 border border-slate-200">
+                  {item.image ? (
+                    <img src={item.image} className="w-full h-full object-cover" alt={item.name} />
+                  ) : (
+                    <div className="w-full h-full flex items-center justify-center text-slate-300 bg-slate-50 relative">
+                       <UtensilsCrossed size={32} className="opacity-20" />
+                       <span className="absolute inset-0 flex items-center justify-center font-black text-2xl text-slate-200 pointer-events-none uppercase">
+                          {item.name.charAt(0)}
+                       </span>
+                    </div>
+                  )}
+                </div>
+
+                {/* Nombre (TEXTO NEGRO) */}
+                <div className="flex-1 min-w-0">
+                  <h3 className="text-xl font-black uppercase tracking-tight text-slate-900 line-clamp-1">
+                    {item.name}
+                  </h3>
+                </div>
+
+                {/* Precio (TEXTO NEGRO / ALTO CONTRASTE) */}
+                <div className="text-right shrink-0 pr-4">
+                  <div className="text-3xl font-black text-slate-900 tracking-tighter">
+                    {currencySymbol}{item.price.toLocaleString()}
                   </div>
-                )}
-              </div>
-
-              {/* Nombre (TEXTO NEGRO) */}
-              <div className="flex-1 min-w-0">
-                <h3 className="text-xl font-black uppercase tracking-tight text-slate-900 line-clamp-1">
-                  {item.name}
-                </h3>
-              </div>
-
-              {/* Precio (TEXTO NEGRO / ALTO CONTRASTE) */}
-              <div className="text-right shrink-0 pr-4">
-                <div className="text-3xl font-black text-slate-900 tracking-tighter">
-                  {currencySymbol}{item.price.toLocaleString()}
                 </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
 
-          {(!activeScreen || activeScreen.items.length === 0) && (
+          {(!renderData || renderData.items.length === 0) && (
             <div className="h-full flex items-center justify-center text-slate-700 italic uppercase font-black text-xs tracking-widest border-4 border-dashed border-slate-900 rounded-[3rem]">
                Configure productos con la categoría "Catálogo" para mostrarlos aquí.
             </div>
