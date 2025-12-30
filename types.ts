@@ -81,8 +81,13 @@ export interface GoogleAccountStub {
 }
 
 export interface PeripheralsSettings {
-  printerMode: 'NONE' | 'BROWSER' | 'ESCPOS';
-  barcodeScannerMode: 'NONE' | 'HID';
+  printerMode: 'WEB' | 'DESKTOP' | 'ANDROID';
+  printerName?: string;
+  printerIp?: string;
+  printerConnectionType?: 'IP' | 'USB_OTG' | 'BLUETOOTH' | 'NETWORK';
+  barcodeScannerMode: 'KEYBOARD' | 'BLUETOOTH' | 'CAMERA';
+  scannerAutoFocus?: boolean;
+  scannerCameraPreference?: 'rear' | 'front';
 }
 
 export interface BusinessConfig {

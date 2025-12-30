@@ -1,13 +1,13 @@
+
 import React, { useState, useRef, useMemo, useEffect } from 'react';
 import { useStore } from '../context/StoreContext';
-import { Role, User, BusinessConfig, CurrencyConfig, PaymentMethodType, LicenseTier, Currency, POSStoreTerminal, View, PaymentMethodConfig } from '../types';
+import { Role, User, BusinessConfig, CurrencyConfig, PaymentMethodType, LicenseTier, Currency, POSStoreTerminal, View, PaymentMethodConfig, PeripheralsSettings } from '../types';
 import { 
   Lock, Building2, User as UserIcon, DollarSign, ShieldCheck, 
   Save, Plus, Trash2, Key, Crown, Printer, Barcode, CreditCard, 
   Phone, Mail, MapPin, Hash, Receipt, AlertCircle, Banknote, Globe, Wallet, Camera, Monitor, LogIn, LogOut, CheckSquare, Square, X,
   ArrowRight, Sparkles, Cloud, Zap, ExternalLink, Copy, Info, QrCode, Image as ImageIcon, Timer, Palette, Cpu, MessageCircle, Check, ShieldAlert,
-  // Fix: Added missing Edit3 import and aliased History to avoid conflict with global window.History
-  Edit3, History as HistoryIcon
+  Edit3, History as HistoryIcon, Smartphone, Wifi, Bluetooth, Usb, Link
 } from 'lucide-react';
 
 export const Configuration: React.FC = () => {
@@ -177,7 +177,17 @@ export const Configuration: React.FC = () => {
     const updated = tempBiz.paymentMethods.map(m => 
         m.id === id ? { ...m, [field]: !m[field] } : m
     );
-    setTempBiz({ ...tempBiz, paymentMethods: updated });
+    setTempBiz({ ...tempBiz, peripherals: tempBiz.peripherals, paymentMethods: updated });
+  };
+
+  const updatePeriph = (updates: Partial<PeripheralsSettings>) => {
+    setTempBiz({
+        ...tempBiz,
+        peripherals: {
+            ...(tempBiz.peripherals || { printerMode: 'WEB', barcodeScannerMode: 'KEYBOARD' }),
+            ...updates
+        }
+    });
   };
 
   if (!isAuthenticated && !isRescueMode && users.length > 0) {
@@ -246,6 +256,107 @@ export const Configuration: React.FC = () => {
             </div>
           </section>
 
+          {/* PERIFERICOS SECTION */}
+          <section className="bg-white p-10 rounded-[3rem] shadow-sm border border-gray-100">
+              <h3 className="text-2xl font-black text-slate-800 uppercase tracking-tighter flex items-center gap-3 mb-8"><Cpu className="text-brand-500" /> Periféricos y Hardware</h3>
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-10">
+                  {/* Printer Block */}
+                  <div className="space-y-6">
+                      <h4 className="text-xs font-black uppercase text-slate-400 tracking-widest flex items-center gap-2"><Printer size={16}/> Configuración de Impresora</h4>
+                      <div className="grid grid-cols-1 gap-4">
+                          <div className="space-y-1">
+                              <label className="text-[10px] font-black uppercase text-slate-400 pl-2 tracking-widest">Método de Impresión</label>
+                              <select 
+                                  className="w-full bg-gray-50 p-4 rounded-2xl font-black text-xs uppercase outline-none focus:ring-2 focus:ring-brand-500"
+                                  value={tempBiz.peripherals?.printerMode || 'WEB'}
+                                  onChange={e => updatePeriph({ printerMode: e.target.value as any })}
+                              >
+                                  <option value="WEB">Navegador (Web/Iframe)</option>
+                                  <option value="DESKTOP">Escritorio (Native Desktop)</option>
+                                  <option value="ANDROID">Android (Bluetooth/USB/IP)</option>
+                              </select>
+                          </div>
+
+                          {tempBiz.peripherals?.printerMode === 'DESKTOP' && (
+                              <div className="space-y-4 animate-in slide-in-from-top-2">
+                                  <div className="space-y-1">
+                                      <label className="text-[10px] font-black uppercase text-slate-400 pl-2 tracking-widest">Nombre de Impresora</label>
+                                      <input className="w-full bg-gray-50 p-4 rounded-2xl font-bold outline-none border-2 border-transparent focus:border-brand-500 transition-all" placeholder="Ej: EPSON TM-T20" value={tempBiz.peripherals?.printerName || ''} onChange={e => updatePeriph({ printerName: e.target.value })} />
+                                  </div>
+                                  <div className="p-4 bg-slate-50 rounded-2xl flex items-center gap-3">
+                                      <Monitor size={16} className="text-slate-400"/>
+                                      <p className="text-[9px] font-bold text-slate-400 uppercase italic">Las impresoras se detectan automáticamente en la versión instalable.</p>
+                                  </div>
+                              </div>
+                          )}
+
+                          {tempBiz.peripherals?.printerMode === 'ANDROID' && (
+                              <div className="space-y-4 animate-in slide-in-from-top-2">
+                                  <div className="grid grid-cols-2 gap-4">
+                                      <div className="space-y-1">
+                                          <label className="text-[10px] font-black uppercase text-slate-400 pl-2 tracking-widest">Conexión</label>
+                                          <select className="w-full bg-gray-50 p-4 rounded-2xl font-bold outline-none" value={tempBiz.peripherals?.printerConnectionType || 'IP'} onChange={e => updatePeriph({ printerConnectionType: e.target.value as any })}>
+                                              <option value="IP">IP / NETWORK</option>
+                                              <option value="USB_OTG">USB OTG</option>
+                                              <option value="BLUETOOTH">BLUETOOTH</option>
+                                          </select>
+                                      </div>
+                                      {tempBiz.peripherals?.printerConnectionType === 'IP' && (
+                                          <div className="space-y-1">
+                                              <label className="text-[10px] font-black uppercase text-slate-400 pl-2 tracking-widest">Dirección IP</label>
+                                              <input className="w-full bg-gray-50 p-4 rounded-2xl font-bold outline-none border-2 border-transparent focus:border-brand-500 transition-all" placeholder="192.168.1.100" value={tempBiz.peripherals?.printerIp || ''} onChange={e => updatePeriph({ printerIp: e.target.value })} />
+                                          </div>
+                                      )}
+                                  </div>
+                              </div>
+                          )}
+                      </div>
+                  </div>
+
+                  {/* Scanner Block */}
+                  <div className="space-y-6">
+                      <h4 className="text-xs font-black uppercase text-slate-400 tracking-widest flex items-center gap-2"><Barcode size={16}/> Lector de Código de Barras</h4>
+                      <div className="grid grid-cols-1 gap-4">
+                          <div className="space-y-1">
+                              <label className="text-[10px] font-black uppercase text-slate-400 pl-2 tracking-widest">Modo del Lector</label>
+                              <select 
+                                  className="w-full bg-gray-50 p-4 rounded-2xl font-black text-xs uppercase outline-none focus:ring-2 focus:ring-brand-500"
+                                  value={tempBiz.peripherals?.barcodeScannerMode || 'KEYBOARD'}
+                                  onChange={e => updatePeriph({ barcodeScannerMode: e.target.value as any })}
+                              >
+                                  <option value="KEYBOARD">Teclado Emulado (USB/Wedge)</option>
+                                  <option value="BLUETOOTH">Bluetooth Directo</option>
+                                  <option value="CAMERA">Cámara Integrada (Mobile)</option>
+                              </select>
+                          </div>
+
+                          {tempBiz.peripherals?.barcodeScannerMode === 'CAMERA' && (
+                              <div className="space-y-4 animate-in slide-in-from-top-2">
+                                  <div className="grid grid-cols-2 gap-4">
+                                      <div className="space-y-1">
+                                          <label className="text-[10px] font-black uppercase text-slate-400 pl-2 tracking-widest">Preferencia</label>
+                                          <select className="w-full bg-gray-50 p-4 rounded-2xl font-bold outline-none" value={tempBiz.peripherals?.scannerCameraPreference || 'rear'} onChange={e => updatePeriph({ scannerCameraPreference: e.target.value as any })}>
+                                              <option value="rear">Cámara Trasera</option>
+                                              <option value="front">Cámara Frontal</option>
+                                          </select>
+                                      </div>
+                                      <div className="flex items-end pb-2 pl-2">
+                                          <label className="flex items-center gap-3 cursor-pointer group">
+                                              <input type="checkbox" className="hidden" checked={tempBiz.peripherals?.scannerAutoFocus || false} onChange={e => updatePeriph({ scannerAutoFocus: e.target.checked })} />
+                                              <div className={`w-10 h-5 rounded-full p-1 transition-all ${tempBiz.peripherals?.scannerAutoFocus ? 'bg-brand-600' : 'bg-gray-300'}`}>
+                                                  <div className={`bg-white w-3 h-3 rounded-full shadow transition-all ${tempBiz.peripherals?.scannerAutoFocus ? 'translate-x-5' : 'translate-x-0'}`}></div>
+                                              </div>
+                                              <span className="text-[10px] font-black text-slate-500 uppercase tracking-tighter">Auto-Foco</span>
+                                          </label>
+                                      </div>
+                                  </div>
+                              </div>
+                          )}
+                      </div>
+                  </div>
+              </div>
+          </section>
+
           {/* CATALOGO WEB LOCAL SECTION */}
           <section className="bg-white p-10 rounded-[3rem] shadow-sm border border-gray-100">
             <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-8">
@@ -258,6 +369,23 @@ export const Configuration: React.FC = () => {
 
             {tempBiz.isWebCatalogActive && (
               <div className="space-y-8 animate-in slide-in-from-top-4 duration-500">
+                  {/* URL DE ACCESO RESTAURADA */}
+                  <div className="bg-brand-50 p-6 rounded-[2.5rem] border-2 border-brand-100 flex flex-col md:flex-row items-center justify-between gap-4 shadow-sm">
+                      <div className="flex items-center gap-4">
+                          <div className="p-3 bg-white rounded-xl shadow-sm text-brand-600"><Link size={20}/></div>
+                          <div>
+                              <p className="text-[10px] font-black text-brand-600 uppercase tracking-[0.2em] mb-1">Enlace de acceso público</p>
+                              <p className="font-mono text-xs font-bold text-slate-600 break-all bg-white/50 px-2 py-1 rounded-lg border border-brand-100/50">{absoluteCatalogUrl}</p>
+                          </div>
+                      </div>
+                      <button 
+                          onClick={() => { navigator.clipboard.writeText(absoluteCatalogUrl); notify("Enlace copiado al portapapeles", "success"); }}
+                          className="w-full md:w-auto px-6 py-3 bg-white text-slate-900 rounded-xl font-black text-[10px] uppercase tracking-widest shadow-sm hover:bg-brand-500 hover:text-white transition-all flex items-center justify-center gap-2"
+                      >
+                          <Copy size={14}/> Copiar URL
+                      </button>
+                  </div>
+
                   <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
                     <div className="bg-slate-50 p-8 rounded-[2.5rem] border border-slate-100">
                         <div className="flex justify-between items-center mb-6">
@@ -346,7 +474,7 @@ export const Configuration: React.FC = () => {
                          <div className="p-3 bg-slate-100 rounded-xl text-slate-600"><CreditCard size={20}/></div>
                          <div className="flex gap-1">
                             <button onClick={() => { setEditingMethod(pm); setShowMethodModal(true); }} className="p-2 text-slate-400 hover:text-brand-600"><Edit3 size={16}/></button>
-                            <button onClick={() => { if(confirm('¿Eliminar método?')) setTempBiz({...tempBiz, paymentMethods: tempBiz.paymentMethods.filter(m => m.id !== pm.id)}); }} className="p-2 text-red-300 hover:text-red-500"><Trash2 size={16}/></button>
+                            <button onClick={() => { if(confirm('¿Eliminar método?')) setTempBiz({...tempBiz, peripherals: tempBiz.peripherals, paymentMethods: tempBiz.paymentMethods.filter(m => m.id !== pm.id)}); }} className="p-2 text-red-300 hover:text-red-500"><Trash2 size={16}/></button>
                          </div>
                       </div>
                       <h4 className="font-black text-slate-800 uppercase text-xs tracking-widest mb-1">{pm.label}</h4>
@@ -386,7 +514,7 @@ export const Configuration: React.FC = () => {
                </div>
                <div className="space-y-6">
                   <div className="space-y-1">
-                      <label className="text-[10px] font-black text-gray-400 uppercase pl-2">Nueva Llave de Activación</label>
+                      <label className="text-[10px] font-black text-gray-400 uppercase pl-2 tracking-widest">Nueva Llave de Activación</label>
                       <div className="relative">
                           <Key className="absolute left-5 top-5 text-brand-500" size={24} />
                           <input className="w-full bg-gray-50 border-2 border-gray-100 p-5 pl-14 rounded-3xl font-black text-slate-800 tracking-widest outline-none focus:border-brand-500" placeholder="XXXX-XXXX-XXXX-XXXX" value={licenseKey} onChange={e => setLicenseKey(e.target.value.toUpperCase())} />
@@ -395,7 +523,7 @@ export const Configuration: React.FC = () => {
                   <button onClick={handleActivateLicense} className="w-full bg-slate-900 text-white font-black py-6 rounded-3xl shadow-xl hover:bg-brand-600 transition-all uppercase tracking-widest text-xs">Validar y Activar</button>
                   <div className="p-6 bg-emerald-50 rounded-2xl border border-emerald-100 flex items-center gap-4">
                       <div className="p-3 bg-emerald-500 text-white rounded-xl shadow-lg shadow-emerald-500/20"><MessageCircle size={24}/></div>
-                      <div><p className="text-[10px] font-black text-emerald-700 uppercase">¿Necesitas soporte técnico?</p><p className="text-xs font-bold text-emerald-600">Contactar: +53 50019541</p></div>
+                      <div><p className="text-[10px] font-black text-emerald-700 uppercase tracking-widest">¿Necesitas soporte técnico?</p><p className="text-xs font-bold text-emerald-600">Contactar: +53 50019541</p></div>
                   </div>
                </div>
             </div>
@@ -491,7 +619,7 @@ export const Configuration: React.FC = () => {
               </div>
               <div className="p-8 space-y-6">
                  <div className="space-y-1">
-                    <label className="text-[10px] font-black text-gray-400 uppercase pl-2">Tipo de Canal (Lógica TPV)</label>
+                    <label className="text-[10px] font-black text-gray-400 uppercase pl-2 tracking-widest">Tipo de Canal (Lógica TPV)</label>
                     <select 
                         className="w-full bg-gray-50 p-4 rounded-2xl font-black text-xs uppercase outline-none focus:ring-2 focus:ring-brand-500"
                         value={editingMethod.id}
@@ -501,14 +629,14 @@ export const Configuration: React.FC = () => {
                     </select>
                  </div>
                  <div className="space-y-1">
-                    <label className="text-[10px] font-black text-gray-400 uppercase pl-2">Nombre para el Cliente (Etiqueta)</label>
+                    <label className="text-[10px] font-black text-gray-400 uppercase pl-2 tracking-widest">Nombre para el Cliente (Etiqueta)</label>
                     <input className="w-full bg-gray-50 p-4 rounded-2xl font-black text-slate-800 outline-none focus:ring-2 focus:ring-brand-500 uppercase" placeholder="Ej: Efectivo" value={editingMethod.label} onChange={e => setEditingMethod({...editingMethod, label: e.target.value})} />
                  </div>
                  
                  <div className="bg-slate-50 p-6 rounded-3xl border border-slate-100 flex items-center justify-between">
                     <div className="flex items-center gap-3">
                        <div className="p-2 bg-white rounded-xl shadow-sm text-slate-400"><Printer size={16}/></div>
-                       <div><p className="text-[10px] font-black text-slate-800 uppercase">Mostrar en Ticket</p><p className="text-[8px] font-bold text-slate-400 uppercase">Aparecerá en el comprobante impreso</p></div>
+                       <div><p className="text-[10px] font-black text-slate-800 uppercase tracking-tighter">Mostrar en Ticket</p><p className="text-[8px] font-bold text-slate-400 uppercase tracking-tight">Aparecerá en el comprobante impreso</p></div>
                     </div>
                     <button onClick={() => setEditingMethod({...editingMethod, showInTicket: !editingMethod.showInTicket})} className={`w-12 h-6 rounded-full p-1 transition-all ${editingMethod.showInTicket ? 'bg-emerald-500' : 'bg-slate-300'}`}>
                        <div className={`bg-white w-4 h-4 rounded-full transition-all ${editingMethod.showInTicket ? 'translate-x-6' : 'translate-x-0'}`}></div>
@@ -531,10 +659,10 @@ export const Configuration: React.FC = () => {
               </div>
               <div className="p-8 space-y-6">
                  <div className="grid grid-cols-2 gap-4">
-                    <div className="space-y-1"><label className="text-[10px] font-black text-gray-400 uppercase pl-2">Código (ISO)</label><input className="w-full bg-gray-50 p-4 rounded-2xl font-black uppercase outline-none focus:ring-2 focus:ring-brand-500" placeholder="USD" value={newCurrency.code} onChange={e => setNewCurrency({...newCurrency, code: e.target.value.toUpperCase()})} maxLength={5} /></div>
-                    <div className="space-y-1"><label className="text-[10px] font-black text-gray-400 uppercase pl-2">Símbolo</label><input className="w-full bg-gray-50 p-4 rounded-2xl font-black text-center outline-none focus:ring-2 focus:ring-brand-500" placeholder="$" value={newCurrency.symbol} onChange={e => setNewCurrency({...newCurrency, symbol: e.target.value})} maxLength={2} /></div>
+                    <div className="space-y-1"><label className="text-[10px] font-black text-gray-400 uppercase pl-2 tracking-widest">Código (ISO)</label><input className="w-full bg-gray-50 p-4 rounded-2xl font-black uppercase outline-none focus:ring-2 focus:ring-brand-500" placeholder="USD" value={newCurrency.code} onChange={e => setNewCurrency({...newCurrency, code: e.target.value.toUpperCase()})} maxLength={5} /></div>
+                    <div className="space-y-1"><label className="text-[10px] font-black text-gray-400 uppercase pl-2 tracking-widest">Símbolo</label><input className="w-full bg-gray-50 p-4 rounded-2xl font-black text-center outline-none focus:ring-2 focus:ring-brand-500" placeholder="$" value={newCurrency.symbol} onChange={e => setNewCurrency({...newCurrency, symbol: e.target.value})} maxLength={2} /></div>
                  </div>
-                 <div className="space-y-1"><label className="text-[10px] font-black text-gray-400 uppercase pl-2">Tasa de Cambio (Base)</label><input type="number" className="w-full bg-gray-50 p-5 rounded-2xl font-black text-xl outline-none focus:ring-2 focus:ring-brand-500" value={newCurrency.rate} onChange={e => setNewCurrency({...newCurrency, rate: parseFloat(e.target.value) || 0})} /></div>
+                 <div className="space-y-1"><label className="text-[10px] font-black text-gray-400 uppercase pl-2 tracking-widest">Tasa de Cambio (Base)</label><input type="number" className="w-full bg-gray-50 p-5 rounded-2xl font-black text-xl outline-none focus:ring-2 focus:ring-brand-500" value={newCurrency.rate} onChange={e => setNewCurrency({...newCurrency, rate: parseFloat(e.target.value) || 0})} /></div>
                  <button onClick={handleAddCurrency} className="w-full bg-brand-500 text-slate-900 font-black py-5 rounded-3xl shadow-xl hover:bg-brand-400 transition-all uppercase tracking-widest text-xs">Registrar Divisa</button>
               </div>
            </div>
