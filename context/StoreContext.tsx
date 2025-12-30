@@ -163,7 +163,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   const getCurrentCash = useCallback(() => {
     const cash: any = { CUP: 0, USD: 0, EUR: 0 };
-    ledger.filter(l => l.timestamp >= (activeShift?.openedAt || '') && l.paymentMethod === 'CASH').forEach(l => {
+    ledger.filter(l => l.timestamp >= (activeShift?.openedAt || '') && l.paymentMethod === 'CASH' && l.affectsCash !== false).forEach(l => {
       if (l.direction === 'IN') cash[l.currency] = (cash[l.currency] || 0) + l.amount;
       else cash[l.currency] = (cash[l.currency] || 0) - l.amount;
     });
@@ -174,6 +174,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   }, [ledger, activeShift]);
 
   const executeLedgerTransaction = useCallback((entry: Partial<LedgerEntry>) => {
+    const pm = entry.paymentMethod || 'CASH';
     const newEntry: LedgerEntry = {
       id: generateUniqueId(),
       timestamp: new Date().toISOString(),
@@ -184,7 +185,8 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       userId: currentUser?.id || '',
       userName: currentUser?.name || 'Sistema',
       description: entry.description || '',
-      paymentMethod: entry.paymentMethod || 'CASH',
+      paymentMethod: pm,
+      affectsCash: entry.affectsCash ?? (pm !== 'NONE'),
       txId: entry.txId
     };
     setLedger(prev => [...prev, newEntry]);
@@ -249,19 +251,14 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
     let finalRemainingCredit: number | undefined = undefined;
 
-    const newLedgerEntries: LedgerEntry[] = [];
     const txId = generateUniqueId();
     payments.forEach((p: PaymentDetail) => {
-      newLedgerEntries.push({
-        id: generateUniqueId(),
-        timestamp: new Date().toISOString(),
+      executeLedgerTransaction({
         type: 'SALE',
         direction: 'IN',
         amount: p.amount,
         currency: p.currency,
         paymentMethod: p.method,
-        userId: currentUser?.id || '',
-        userName: currentUser?.name || '',
         description: `Venta ${txId.slice(-6)}`,
         txId
       });
@@ -285,21 +282,16 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     });
 
     if (changeInCUP > 0) {
-      newLedgerEntries.push({
-        id: generateUniqueId(),
-        timestamp: new Date().toISOString(),
+      executeLedgerTransaction({
         type: 'EXCHANGE',
         direction: 'OUT',
         amount: changeInCUP,
         currency: 'CUP',
         paymentMethod: 'CASH',
-        userId: currentUser?.id || '',
-        userName: currentUser?.name || '',
         description: `Cambio Venta ${txId.slice(-6)}`,
         txId
       });
     }
-    setLedger(prev => [...prev, ...newLedgerEntries]);
 
     if (appliedCouponId) {
       setCoupons(prev => prev.map(c => 
@@ -343,7 +335,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     notify("Venta procesada con éxito", "success");
     setSelectedClientId(null);
     return finalTicket;
-  }, [products, businessConfig, activePosTerminalId, activeShift, currentUser, convertCurrency, notify, selectedClientId, currencies, clients, coupons]);
+  }, [products, businessConfig, activePosTerminalId, activeShift, currentUser, convertCurrency, notify, selectedClientId, currencies, clients, coupons, executeLedgerTransaction]);
 
   const processRefund = useCallback((saleId: string, refundItems: RefundItem[], authUser: User, source: 'CASHBOX' | 'OUTSIDE_CASHBOX'): boolean => {
     const sale = sales.find(s => s.id === saleId);
@@ -392,20 +384,15 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     });
 
     if (source === 'CASHBOX') {
-        const newLedgerEntry: LedgerEntry = {
-          id: generateUniqueId(),
-          timestamp,
+        executeLedgerTransaction({
           type: 'REFUND',
           direction: 'OUT',
           amount: totalRefundCUP,
           currency: 'CUP',
           paymentMethod: 'CASH',
-          userId: authUser.id,
-          userName: authUser.name,
           description: `Reembolso Ticket ${saleId.slice(-6)}`,
           txId: refundId
-        };
-        setLedger(prev => [...prev, newLedgerEntry]);
+        });
     }
 
     setProducts(updatedProducts);
@@ -428,7 +415,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
     notify(`Reembolso procesado (${source === 'CASHBOX' ? 'Caja' : 'Stock'}): -$${totalRefundCUP.toFixed(2)} CUP`, "success");
     return true;
-  }, [sales, products, activeShift, notify, getCurrentCash]);
+  }, [sales, products, activeShift, notify, getCurrentCash, executeLedgerTransaction]);
 
   const login = async (pin: string): Promise<boolean> => {
     const hashed = await hashPin(pin);
@@ -672,6 +659,11 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       isItemLocked: (key, idx) => PermissionEngine.isItemSoftLocked(key, idx, getCurrentTier()),
       rates: currencies.reduce((acc, c) => ({ ...acc, [c.code]: c.rate }), {}),
       getCurrentCash,
+      getLedgerBalance: (currency: string, method: string) => {
+        return ledger
+          .filter(l => l.currency === currency && l.paymentMethod === method && l.affectsCash !== false)
+          .reduce((acc, l) => l.direction === 'IN' ? acc + l.amount : acc - l.amount, 0);
+      },
       addClient: (c) => setClients(prev => [...prev, { ...c, id: c.id || generateUniqueId(), purchaseHistory: [], creditBalance: 0, balance: 0, groupId: c.groupId || 'GENERAL', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() }]),
       updateClient: (c) => setClients(prev => prev.map(client => client.id === c.id ? { ...c, updatedAt: new Date().toISOString() } : client)),
       deleteClient: (id) => setClients(prev => prev.filter(c => c.id !== id)),

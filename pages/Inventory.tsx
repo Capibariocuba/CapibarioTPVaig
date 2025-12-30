@@ -432,7 +432,8 @@ export const Inventory: React.FC = () => {
             amount: qty * unitCost,
             currency: businessConfig.primaryCurrency,
             description: `Restock: ${targetLabel} (${prev.name}) +${qty} Almacén: ${activeWarehouse.name}.`,
-            paymentMethod: 'NONE'
+            paymentMethod: 'NONE',
+            affectsCash: false
         });
 
         return {
@@ -663,6 +664,7 @@ export const Inventory: React.FC = () => {
     setEditingProduct(prev => prev ? ({
         ...prev,
         pricingRules: [...(prev.pricingRules || []), ruleDraft],
+        // Fix: changed 'logEntry' to 'newLog' to match variable name
         history: [newLog, ...(prev.history || [])]
     }) : null);
     setRuleDraft(null);
@@ -734,7 +736,8 @@ export const Inventory: React.FC = () => {
         amount: qty * (wasteTargetId === 'PARENT' ? selectedWasteProduct.cost : (selectedWasteProduct.variants.find(v=>v.id===wasteTargetId)?.cost || 0)),
         currency: businessConfig.primaryCurrency,
         description: `Pérdida por merma no comercial: ${selectedWasteProduct.name} (${targetLabel}) -${qty} uds. Almacén: ${activeWarehouse.name}.`,
-        paymentMethod: 'NONE'
+        paymentMethod: 'NONE',
+        affectsCash: false
     });
 
     setIsWasteModalOpen(false);
@@ -863,7 +866,7 @@ export const Inventory: React.FC = () => {
                       </div>
                       <div className="bg-white p-6 rounded-3xl shadow-sm border border-brand-100 flex items-center gap-4">
                           <div className="p-3 bg-brand-50 text-brand-600 rounded-xl"><Edit3 size={20}/></div>
-                          <div><p className="text-[9px] font-black text-slate-400 uppercase">Actualizaciones</p><p className="text-2xl font-black text-brand-600">{importSummary.update}</p></div>
+                          <div><p className="text-[9px] font-black text-slate-400 uppercase">Actualizaciones</p><p className="text-2xl font-black text-brand-500">{importSummary.update}</p></div>
                       </div>
                       <div className="bg-white p-6 rounded-3xl shadow-sm border border-red-100 flex items-center gap-4">
                           <div className="p-3 bg-red-50 text-red-600 rounded-xl"><AlertCircle size={20}/></div>

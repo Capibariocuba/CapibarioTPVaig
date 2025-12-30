@@ -136,6 +136,7 @@ export interface LedgerEntry {
   userId: string;
   userName: string;
   description: string;
+  affectsCash?: boolean; // Nuevo flag para el fix de inventario
   txId?: string;
 }
 
