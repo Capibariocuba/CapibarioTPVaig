@@ -236,7 +236,7 @@ export const WebCatalogView: React.FC = () => {
         {/* Footer Branding Capibario (CENTRADOS) */}
         <div className="mt-6 flex flex-col items-center justify-center opacity-40 shrink-0">
            <p className="text-[10px] font-black uppercase tracking-[0.4em] text-white">
-              POWERED BY CAPIBARIO TPV
+              DESARROLLADO X CAPIBARIO
            </p>
            <p className="text-[8px] font-bold tracking-[0.2em] text-brand-400 mt-1 uppercase">
               www.capibario.com
