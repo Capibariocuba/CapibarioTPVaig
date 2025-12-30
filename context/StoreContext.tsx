@@ -26,7 +26,7 @@ const hashPin = async (pin: string): Promise<string> => {
 };
 
 const DEFAULT_CURRENCIES: CurrencyConfig[] = [
-  { code: 'CUP', symbol: '₱', rate: 1, allowedPaymentMethods: ['CASH', 'TRANSFER'], isBase: true },
+  { code: 'CUP', symbol: '$', rate: 1, allowedPaymentMethods: ['CASH', 'TRANSFER'], isBase: true },
   { code: 'USD', symbol: '$', rate: 330, allowedPaymentMethods: ['CASH', 'TRANSFER', 'CARD'] },
   { code: 'EUR', symbol: '€', rate: 340, allowedPaymentMethods: ['CASH', 'TRANSFER'] }
 ];
