@@ -217,26 +217,70 @@ export const POS: React.FC = () => {
 
   const removeCoupon = () => { setAppliedCoupon(null); notify("Cupón removido", "success"); };
 
-  // --- IMPRESIÓN SEGURA ---
-  const printRawHTML = (html: string) => {
-    const printWindow = window.open('', '_blank', 'width=600,height=800,noopener,noreferrer');
-    if (!printWindow) { notify("Habilite ventanas emergentes para imprimir", "error"); return; }
-    
-    // Mitigación: Desvincular de la ventana madre para evitar manipulaciones
-    printWindow.opener = null;
+  // --- IMPRESIÓN ESTABLE MEDIANTE IFRAME ---
+  const buildPrintDocument = (innerHtml: string) => `
+    <!DOCTYPE html>
+    <html>
+      <head>
+        <meta charset="UTF-8">
+        <title>Impresión de Ticket</title>
+        <style>
+          @page { size: 80mm auto; margin: 0; }
+          body { 
+            margin: 0; 
+            padding: 4mm; 
+            font-family: 'Courier New', Courier, monospace; 
+            font-size: 10pt; 
+            color: #000; 
+            width: 72mm; 
+            background: white;
+          }
+          .center { text-align: center; }
+          .right { text-align: right; }
+          .bold { font-weight: bold; }
+          .dashed { border-top: 1px dashed #000; margin: 3mm 0; }
+          table { width: 100%; border-collapse: collapse; margin: 2mm 0; }
+          th, td { text-align: left; vertical-align: top; padding: 1mm 0; }
+          .col-desc { width: 45%; overflow: hidden; }
+          .col-qty { width: 15%; text-align: center; }
+          .col-total { width: 40%; text-align: right; white-space: nowrap; }
+        </style>
+      </head>
+      <body>${innerHtml}</body>
+    </html>
+  `;
 
-    printWindow.document.write(`
-      <html><head><title>Imprimir Ticket</title><style>@page { size: 80mm auto; margin: 0; } body { margin: 0; padding: 4mm; font-family: 'Courier New', Courier, monospace; font-size: 10pt; color: #000; width: 72mm; } .center { text-align: center; } .right { text-align: right; } .bold { font-weight: bold; } .dashed { border-top: 1px dashed #000; margin: 3mm 0; } table { width: 100%; border-collapse: collapse; margin: 2mm 0; } th, td { text-align: left; vertical-align: top; padding: 1mm 0; } .col-desc { width: 45%; overflow: hidden; } .col-qty { width: 15%; text-align: center; } .col-total { width: 40%; text-align: right; white-space: nowrap; } </style></head>
-      <body>${html}</body></html>
-    `);
-    printWindow.document.close();
-    printWindow.focus();
-    setTimeout(() => { 
-        if (!printWindow.closed) {
-            printWindow.print(); 
-            printWindow.close(); 
-        }
-    }, 500);
+  const printRawHTML = (html: string) => {
+    if (!html || html.trim() === '') {
+      notify("Ticket vacío o inválido. No se pudo imprimir", "error");
+      console.error("Print Error: HTML content is empty");
+      return;
+    }
+
+    // Crear iframe oculto para evitar popups bloqueados
+    const iframe = document.createElement('iframe');
+    iframe.style.position = 'fixed';
+    iframe.style.right = '0';
+    iframe.style.bottom = '0';
+    iframe.style.width = '0';
+    iframe.style.height = '0';
+    iframe.style.border = '0';
+    iframe.srcdoc = buildPrintDocument(html);
+
+    iframe.onload = () => {
+      if (iframe.contentWindow) {
+        iframe.contentWindow.focus();
+        iframe.contentWindow.print();
+        // Limpieza tras un tiempo prudencial
+        setTimeout(() => {
+          if (document.body.contains(iframe)) {
+            document.body.removeChild(iframe);
+          }
+        }, 2000);
+      }
+    };
+
+    document.body.appendChild(iframe);
   };
 
   const getTicketHTML = (ticket: Ticket | Sale) => {
@@ -697,12 +741,31 @@ export const POS: React.FC = () => {
         {showPaymentModal && <PaymentModal total={cartTotal} currencyCode={posCurrency} clientId={selectedClientId} onClose={() => setShowPaymentModal(false)} onConfirm={handleConfirmSale} />}
         {showTicketModal && currentTicket && (
             <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-md flex items-center justify-center z-[300] p-4">
-                <div className="bg-white p-10 rounded-[4rem] w-full max-sm text-center shadow-2xl animate-in zoom-in">
-                    <div className="bg-emerald-50 text-emerald-600 p-8 rounded-full w-24 h-24 flex items-center justify-center mx-auto mb-8 shadow-inner"><Receipt size={48}/></div>
-                    <h3 className="text-3xl font-black uppercase tracking-tighter mb-2">Venta Exitosa</h3>
-                    <p className="text-[10px] text-slate-400 font-black uppercase tracking-widest mb-6">Comprobante ID: {currentTicket.id.slice(-6)}</p>
-                    <div className="flex gap-2 mb-6"><button onClick={() => printRawHTML(getTicketHTML(currentTicket))} className="flex-1 bg-gray-100 text-slate-700 py-4 rounded-2xl font-black uppercase text-[10px] tracking-widest flex items-center justify-center gap-2 hover:bg-gray-200 transition-all"><Printer size={16}/> Imprimir</button></div>
-                    <button onClick={() => setShowTicketModal(false)} className="w-full bg-slate-900 text-white font-black py-6 rounded-[2rem] uppercase tracking-[0.2em] text-xs shadow-xl">Finalizar</button>
+                <div className="bg-white p-8 md:p-10 rounded-[4rem] w-full max-w-md text-center shadow-2xl animate-in zoom-in overflow-hidden flex flex-col">
+                    <div className="bg-emerald-50 text-emerald-600 p-6 rounded-full w-20 h-20 flex items-center justify-center mx-auto mb-6 shadow-inner shrink-0"><Receipt size={40}/></div>
+                    <h3 className="text-2xl md:text-3xl font-black uppercase tracking-tighter mb-2 shrink-0">Venta Exitosa</h3>
+                    <p className="text-[10px] text-slate-400 font-black uppercase tracking-widest mb-6 shrink-0">Comprobante ID: {currentTicket.id.slice(-6)}</p>
+                    
+                    {/* VISTA PREVIA DEL TICKET */}
+                    <div className="flex-1 bg-gray-50 border border-gray-100 rounded-3xl p-4 mb-6 overflow-y-auto max-h-[40vh] custom-scrollbar text-left shadow-inner">
+                        <div className="bg-white p-4 shadow-sm min-h-full ticket-preview-content">
+                            <div dangerouslySetInnerHTML={{ __html: getTicketHTML(currentTicket) }} />
+                        </div>
+                    </div>
+
+                    <div className="flex flex-col md:flex-row gap-2 mb-2 shrink-0">
+                        <button 
+                            onClick={() => {
+                                const html = getTicketHTML(currentTicket);
+                                console.log("Imprimiendo Ticket - Length:", html?.length, "ID:", currentTicket.id);
+                                printRawHTML(html);
+                            }} 
+                            className="flex-1 bg-slate-100 text-slate-700 py-4 rounded-2xl font-black uppercase text-[10px] tracking-widest flex items-center justify-center gap-2 hover:bg-gray-200 transition-all"
+                        >
+                            <Printer size={16}/> Imprimir
+                        </button>
+                        <button onClick={() => setShowTicketModal(false)} className="flex-1 bg-slate-900 text-white font-black py-4 rounded-2xl uppercase tracking-[0.2em] text-[10px] shadow-xl">Finalizar</button>
+                    </div>
                 </div>
             </div>
         )}

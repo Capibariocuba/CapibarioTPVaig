@@ -1,3 +1,4 @@
+
 import React, { useState, useMemo, useEffect } from 'react';
 import { useStore } from '../context/StoreContext';
 import { Currency, View, Role, Product, Sale, Shift, User } from '../types';
@@ -320,24 +321,49 @@ export const ShiftManager: React.FC<{ onOpen?: () => void }> = ({ onOpen }) => {
 
   const handlePrintZ = () => {
     const html = getZReportHTML();
-    const printWindow = window.open('', '_blank', 'width=600,height=800,noopener,noreferrer');
-    if (!printWindow) {
-      notify("Ventana de impresión bloqueada", "error");
+    if (!html || html.trim() === '') {
+      notify("Reporte vacío o inválido", "error");
       return;
     }
-    
-    // Mitigación: Desvincular de la ventana madre
-    printWindow.opener = null;
 
-    printWindow.document.write(`<html><head><title>REPORTE Z</title></head><body style="margin:0; padding:4mm;">${html}</body></html>`);
-    printWindow.document.close();
-    printWindow.focus();
-    setTimeout(() => {
-      if (!printWindow.closed) {
-          printWindow.print();
-          printWindow.close();
+    // Usar iframe dinámico para evitar bloqueos de ventanas emergentes
+    const iframe = document.createElement('iframe');
+    iframe.style.position = 'fixed';
+    iframe.style.right = '0';
+    iframe.style.bottom = '0';
+    iframe.style.width = '0';
+    iframe.style.height = '0';
+    iframe.style.border = '0';
+    
+    // Inyectar el HTML con estilos
+    iframe.srcdoc = `
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <meta charset="UTF-8">
+          <title>REPORTE Z</title>
+          <style>
+            @page { size: 80mm auto; margin: 0; }
+            body { margin: 0; padding: 4mm; background: white; }
+          </style>
+        </head>
+        <body>${html}</body>
+      </html>
+    `;
+
+    iframe.onload = () => {
+      if (iframe.contentWindow) {
+        iframe.contentWindow.focus();
+        iframe.contentWindow.print();
+        setTimeout(() => {
+          if (document.body.contains(iframe)) {
+            document.body.removeChild(iframe);
+          }
+        }, 2000);
       }
-    }, 500);
+    };
+
+    document.body.appendChild(iframe);
   };
 
   const handleFinalReset = () => {
