@@ -54,12 +54,9 @@ export const WebCatalogView: React.FC = () => {
     const result: { catName: string; items: Product[] }[] = [];
 
     validCategoryNames.forEach(cat => {
-        // Productos que pertenecen a esta categoría real Y tienen el flag Catálogo
         const catItems = available.filter(p => p.categories.includes(cat));
-
         if (catItems.length === 0) return;
 
-        // Dividir en páginas si exceden 10 productos
         for (let i = 0; i < catItems.length; i += ITEMS_PER_SCREEN) {
             result.push({
                 catName: cat,
@@ -98,10 +95,10 @@ export const WebCatalogView: React.FC = () => {
 
   if (!businessConfig.isWebCatalogActive) {
     return (
-      <div className="h-screen bg-white flex flex-col items-center justify-center p-8 text-center animate-in fade-in">
-        <div className="bg-slate-50 p-10 rounded-[3rem] mb-6 border border-slate-100"><AlertCircle size={64} className="text-slate-300 mx-auto" /></div>
-        <h1 className="text-3xl font-black text-slate-900 uppercase tracking-tighter mb-2">Catálogo Offline</h1>
-        <p className="text-slate-400 font-bold uppercase tracking-widest text-xs">Vuelva pronto.</p>
+      <div className="h-screen bg-slate-950 flex flex-col items-center justify-center p-8 text-center animate-in fade-in">
+        <div className="bg-slate-900 p-10 rounded-[3rem] mb-6 border border-slate-800"><AlertCircle size={64} className="text-slate-700 mx-auto" /></div>
+        <h1 className="text-3xl font-black text-white uppercase tracking-tighter mb-2">Catálogo Offline</h1>
+        <p className="text-slate-500 font-bold uppercase tracking-widest text-xs">Vuelva pronto.</p>
       </div>
     );
   }
@@ -110,7 +107,7 @@ export const WebCatalogView: React.FC = () => {
   const slides = businessConfig.digitalCatalogImages || [];
 
   return (
-    <div className="h-screen w-screen bg-white text-slate-900 overflow-hidden flex font-sans select-none transition-colors duration-500">
+    <div className="h-screen w-screen bg-slate-950 text-white overflow-hidden flex font-sans select-none transition-colors duration-500">
       <style>{`
         @keyframes marquee {
           0% { transform: translateX(100%); }
@@ -127,9 +124,9 @@ export const WebCatalogView: React.FC = () => {
       `}</style>
 
       {/* LADO IZQUIERDO: VISUAL (Slideshow + Ticker) */}
-      <div className="w-[45%] h-full flex flex-col border-r border-slate-100 bg-slate-50">
+      <div className="w-[45%] h-full flex flex-col border-r border-white/5 bg-slate-900">
         {/* Slideshow */}
-        <div className="flex-1 relative overflow-hidden bg-slate-200">
+        <div className="flex-1 relative overflow-hidden bg-black">
            {slides.length > 0 ? (
              slides.map((img, idx) => (
                <img 
@@ -140,27 +137,27 @@ export const WebCatalogView: React.FC = () => {
                />
              ))
            ) : (
-             <div className="h-full flex flex-col items-center justify-center text-slate-400 p-20 text-center">
-                <Sparkles size={120} className="mb-6 opacity-20" />
-                <h2 className="text-4xl font-black uppercase tracking-tighter text-slate-300">{businessConfig.name}</h2>
+             <div className="h-full flex flex-col items-center justify-center text-slate-800 p-20 text-center">
+                <Sparkles size={120} className="mb-6 opacity-10" />
+                <h2 className="text-4xl font-black uppercase tracking-tighter text-slate-700">{businessConfig.name}</h2>
              </div>
            )}
            
-           {/* Overlay Logo/Nombre (TEMA BLANCO) */}
-           <div className="absolute top-8 left-8 z-20 flex items-center gap-5 bg-white/90 backdrop-blur-xl p-5 rounded-[2rem] border border-slate-200 shadow-2xl">
-              <div className="w-16 h-16 bg-white rounded-2xl p-2 shadow-sm overflow-hidden flex items-center justify-center border border-slate-100">
+           {/* Overlay Logo/Nombre */}
+           <div className="absolute top-8 left-8 z-20 flex items-center gap-5 bg-black/60 backdrop-blur-xl p-5 rounded-[2.5rem] border border-white/10 shadow-2xl">
+              <div className="w-16 h-16 bg-white rounded-2xl p-2 shadow-sm overflow-hidden flex items-center justify-center border border-white/10">
                 <img src={businessConfig.logo || ''} className="w-full h-full object-contain" alt="Logo" />
               </div>
               <div>
-                <h1 className="text-2xl font-black uppercase tracking-tighter text-slate-900">{businessConfig.name}</h1>
-                <p className="text-[9px] font-black text-brand-500 uppercase tracking-widest">Catálogo Online</p>
+                <h1 className="text-2xl font-black uppercase tracking-tighter text-white">{businessConfig.name}</h1>
+                <p className="text-[9px] font-black text-brand-400 uppercase tracking-widest">Catálogo Online</p>
               </div>
            </div>
         </div>
 
-        {/* Ticker / Cintillo (PERSONALIZABLE) */}
+        {/* Ticker / Cintillo */}
         <div 
-            className="h-[12vh] flex items-center overflow-hidden border-t border-white/20 shadow-[0_-10px_30px_rgba(0,0,0,0.1)] shrink-0"
+            className="h-[12vh] flex items-center overflow-hidden border-t border-white/10 shadow-[0_-10px_30px_rgba(0,0,0,0.3)] shrink-0"
             style={{ backgroundColor: businessConfig.digitalCatalogTickerBgColor || '#0ea5e9' }}
         >
            <div 
@@ -174,21 +171,20 @@ export const WebCatalogView: React.FC = () => {
         </div>
       </div>
 
-      {/* LADO DERECHO: PRODUCTOS (TEMA BLANCO + COMPACTO) */}
-      <div className="flex-1 h-full bg-white p-10 flex flex-col">
+      {/* LADO DERECHO: PRODUCTOS (TEMA OSCURO + FICHAS BLANCAS) */}
+      <div className="flex-1 h-full bg-slate-950 p-8 flex flex-col">
         {/* Header Categoría (COMPACTO) */}
-        <div className="mb-6 flex justify-between items-center border-b-2 border-slate-100 pb-4 shrink-0">
+        <div className="mb-6 flex justify-between items-center border-b border-white/10 pb-4 shrink-0">
            <div className="flex items-center gap-5">
-              <div className="p-3 bg-slate-900 text-white rounded-2xl shadow-lg">
+              <div className="p-3 bg-brand-500 text-white rounded-2xl shadow-lg shadow-brand-500/20">
                 <Layers size={28} />
               </div>
-              <h2 className="text-4xl font-black uppercase tracking-tighter text-slate-900">
+              <h2 className="text-4xl font-black uppercase tracking-tighter text-white">
                 {activeScreen?.catName}
               </h2>
            </div>
            <div className="text-right">
-              <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-0.5">Pedidos</p>
-              <p className="text-2xl font-black text-brand-600 tracking-tighter">{businessConfig.phone}</p>
+              <p className="text-2xl font-black text-white tracking-tighter">{businessConfig.phone}</p>
            </div>
         </div>
 
@@ -197,28 +193,33 @@ export const WebCatalogView: React.FC = () => {
           {activeScreen?.items.map((item, idx) => (
             <div 
               key={`${item.id}-${idx}`}
-              className="bg-white border border-slate-100 p-3 rounded-2xl flex items-center gap-4 hover:border-brand-500/30 transition-all group animate-in slide-in-from-right duration-500 shadow-sm"
-              style={{ animationDelay: `${idx * 50}ms` }}
+              className="bg-white p-2 rounded-2xl flex items-center gap-5 hover:scale-[1.01] transition-all group animate-in slide-in-from-right duration-500 shadow-xl"
+              style={{ animationDelay: `${idx * 40}ms` }}
             >
-              {/* Mini Foto */}
-              <div className="h-full aspect-square rounded-xl bg-slate-50 overflow-hidden shrink-0 border border-slate-50">
+              {/* Thumbnail Ampliado */}
+              <div className="h-full aspect-square rounded-xl bg-slate-100 overflow-hidden shrink-0 border border-slate-200">
                 {item.image ? (
-                  <img src={item.image} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700" alt={item.name} />
+                  <img src={item.image} className="w-full h-full object-cover" alt={item.name} />
                 ) : (
-                  <div className="w-full h-full flex items-center justify-center text-slate-200"><UtensilsCrossed size={18} /></div>
+                  <div className="w-full h-full flex items-center justify-center text-slate-300 bg-slate-50 relative">
+                     <UtensilsCrossed size={32} className="opacity-20" />
+                     <span className="absolute inset-0 flex items-center justify-center font-black text-2xl text-slate-200 pointer-events-none uppercase">
+                        {item.name.charAt(0)}
+                     </span>
+                  </div>
                 )}
               </div>
 
-              {/* Nombre */}
+              {/* Nombre (TEXTO NEGRO) */}
               <div className="flex-1 min-w-0">
-                <h3 className="text-lg font-black uppercase tracking-tight text-slate-800 line-clamp-1 group-hover:text-brand-600 transition-colors">
+                <h3 className="text-xl font-black uppercase tracking-tight text-slate-900 line-clamp-1">
                   {item.name}
                 </h3>
               </div>
 
-              {/* Precio (SIEMPRE VISIBLE) */}
-              <div className="text-right shrink-0">
-                <div className="text-xl font-black text-slate-900 tracking-tighter bg-slate-50 px-4 py-2 rounded-xl border border-slate-100 group-hover:border-brand-500 group-hover:bg-brand-500 group-hover:text-white transition-all">
+              {/* Precio (TEXTO NEGRO / ALTO CONTRASTE) */}
+              <div className="text-right shrink-0 pr-4">
+                <div className="text-3xl font-black text-slate-900 tracking-tighter">
                   {currencySymbol}{item.price.toLocaleString()}
                 </div>
               </div>
@@ -226,26 +227,20 @@ export const WebCatalogView: React.FC = () => {
           ))}
 
           {(!activeScreen || activeScreen.items.length === 0) && (
-            <div className="h-full flex items-center justify-center text-slate-300 italic uppercase font-black text-xs tracking-widest border-4 border-dashed border-slate-50 rounded-[3rem]">
+            <div className="h-full flex items-center justify-center text-slate-700 italic uppercase font-black text-xs tracking-widest border-4 border-dashed border-slate-900 rounded-[3rem]">
                Configure productos con la categoría "Catálogo" para mostrarlos aquí.
             </div>
           )}
         </div>
 
-        {/* Footer Indicadores (TEMA BLANCO) */}
-        <div className="mt-6 flex justify-between items-center bg-slate-50 p-5 rounded-[1.5rem] shrink-0">
-           <div className="flex gap-2">
-              {screens.map((_, idx) => (
-                <div 
-                  key={idx} 
-                  className={`h-1.5 rounded-full transition-all duration-700 ${idx === currentScreenIdx ? 'w-12 bg-slate-900 shadow-sm' : 'w-3 bg-slate-200'}`}
-                />
-              ))}
-           </div>
-           <div className="flex items-center gap-3">
-              <RefreshCw size={12} className="animate-spin text-slate-400" />
-              <span className="text-[9px] font-black uppercase text-slate-400 tracking-[0.2em]">Sincronizado</span>
-           </div>
+        {/* Footer Branding Capibario (CENTRADOS) */}
+        <div className="mt-6 flex flex-col items-center justify-center opacity-40 shrink-0">
+           <p className="text-[10px] font-black uppercase tracking-[0.4em] text-white">
+              POWERED BY CAPIBARIO TPV
+           </p>
+           <p className="text-[8px] font-bold tracking-[0.2em] text-brand-400 mt-1 uppercase">
+              www.capibario.com
+           </p>
         </div>
       </div>
     </div>
