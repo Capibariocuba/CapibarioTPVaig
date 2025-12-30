@@ -1,15 +1,11 @@
 
 import React, { useMemo, useState, useEffect } from 'react';
 import { useStore } from '../context/StoreContext';
-import { Phone, Sparkles, AlertCircle, UtensilsCrossed, ArrowRight, RefreshCw } from 'lucide-react';
+import { Phone, Sparkles, AlertCircle, UtensilsCrossed, ArrowRight, RefreshCw, Layers } from 'lucide-react';
 import { Product } from '../types';
 
-// CONFIGURACIÓN DE LAYOUT Y ANIMACIÓN
-const DESKTOP_COLS = 6;
-const DESKTOP_ROWS = 5;
-const ITEMS_PER_PAGE = DESKTOP_COLS * DESKTOP_ROWS; // 30 productos
-const FLIP_INTERVAL = 8000; // Rotación de página cada 8s
-const DATA_REFRESH_INTERVAL = 10000; // Re-evaluación de stock/precios cada 10s
+// CONFIGURACIÓN DE PANTALLA DERECHA
+const ITEMS_PER_SCREEN = 10; // Productos por pantalla en la lista horizontal
 
 export const WebCatalogView: React.FC = () => {
   const { 
@@ -17,76 +13,78 @@ export const WebCatalogView: React.FC = () => {
     businessConfig, 
     currencies, 
     activePosTerminalId, 
-    warehouses 
+    warehouses,
+    categories
   } = useStore();
   
-  const [currentPage, setCurrentPage] = useState(0);
-  const [isFlipping, setIsFlipping] = useState(false);
-  const [refreshTick, setRefreshTick] = useState(0); // Trigger para re-renderizar lógica cada 10s
+  const [currentScreenIdx, setCurrentScreenIdx] = useState(0);
+  const [currentSlideIdx, setCurrentSlideIdx] = useState(0);
+  const [refreshTick, setRefreshTick] = useState(0);
 
-  // 1. REFRESH INTERNO CADA 10 SEGUNDOS (Sin recarga de página)
+  const rotationSeconds = businessConfig.digitalCatalogRotationSeconds || 10;
+
+  // 1. REFRESH INTERNO CADA 10 SEGUNDOS (Sin recarga de página para stock/precios)
   useEffect(() => {
-    const timer = setInterval(() => {
-      setRefreshTick(t => t + 1);
-    }, DATA_REFRESH_INTERVAL);
+    const timer = setInterval(() => setRefreshTick(t => t + 1), 10000);
     return () => clearInterval(timer);
   }, []);
 
-  // 2. DETERMINAR ALMACÉN ACTIVO (Basado en TPV o Default)
+  // 2. DETERMINAR ALMACÉN ACTIVO
   const activeWhId = useMemo(() => {
     const terminal = businessConfig.posTerminals?.find(t => t.id === activePosTerminalId);
     return terminal?.warehouseId || warehouses[0]?.id || 'wh-default';
   }, [businessConfig.posTerminals, activePosTerminalId, warehouses]);
 
-  // 3. FILTRADO, REASIGNACIÓN DE CATEGORÍAS Y ORDENACIÓN
-  const availableItems = useMemo(() => {
-    // El refreshTick asegura que se re-evalue periódicamente si cambian los datos en el store
-    void refreshTick; 
+  // 3. GENERAR TODAS LAS PANTALLAS (CATEGORÍA -> PÁGINAS)
+  const screens = useMemo(() => {
+    void refreshTick;
+    const available = products.filter(p => !p.hidden && p.warehouseId === activeWhId);
+    
+    // Definir orden de categorías
+    const catNames = categories.map(c => c.name).filter(n => n !== 'Catálogo');
+    const orderedCats = ['Todo', ...catNames, 'Catálogo'];
 
-    return products
-      .filter(p => {
-        const totalStock = (p.stock || 0) + (p.variants?.reduce((acc, v) => acc + (v.stock || 0), 0) || 0);
-        return !p.hidden && p.warehouseId === activeWhId && totalStock > 0;
-      })
-      .map(p => {
-        // Regla: Ocultar "Catálogo" y buscar la siguiente categoría válida
-        const validCats = (p.categories || []).filter(c => c.toLowerCase() !== 'catálogo');
-        const displayCategory = validCats.length > 0 ? validCats[0] : 'General';
-        return { ...p, displayCategory };
-      })
-      .sort((a, b) => {
-        return a.displayCategory.localeCompare(b.displayCategory) || a.name.localeCompare(b.name);
-      });
-  }, [products, activeWhId, refreshTick]);
+    const result: { catName: string; items: Product[] }[] = [];
 
-  // 4. PAGINACIÓN LÓGICA
-  const pages = useMemo(() => {
-    const p = [];
-    for (let i = 0; i < availableItems.length; i += ITEMS_PER_PAGE) {
-      p.push(availableItems.slice(i, i + ITEMS_PER_PAGE));
-    }
-    return p;
-  }, [availableItems]);
+    orderedCats.forEach(cat => {
+        let catItems = [];
+        if (cat === 'Todo') catItems = available;
+        else catItems = available.filter(p => p.categories.includes(cat));
 
-  // 5. ROTACIÓN AUTOMÁTICA
+        if (catItems.length === 0) return;
+
+        // Dividir en páginas si exceden ITEMS_PER_SCREEN
+        for (let i = 0; i < catItems.length; i += ITEMS_PER_SCREEN) {
+            result.push({
+                catName: cat,
+                items: catItems.slice(i, i + ITEMS_PER_SCREEN)
+            });
+        }
+    });
+
+    return result;
+  }, [products, activeWhId, categories, refreshTick]);
+
+  // 4. ROTACIÓN DE PANTALLAS (DERECHA)
   useEffect(() => {
-    if (pages.length <= 1) {
-      setCurrentPage(0);
-      return;
-    }
-
+    if (screens.length <= 1) return;
     const interval = setInterval(() => {
-      setIsFlipping(true);
-      setTimeout(() => {
-        setCurrentPage(prev => (prev + 1) % pages.length);
-        setIsFlipping(false);
-      }, 600);
-    }, FLIP_INTERVAL);
-
+      setCurrentScreenIdx(prev => (prev + 1) % screens.length);
+    }, rotationSeconds * 1000);
     return () => clearInterval(interval);
-  }, [pages.length]);
+  }, [screens.length, rotationSeconds]);
 
-  // 6. OBTENER SÍMBOLO DE MONEDA
+  // 5. ROTACIÓN DE SLIDESHOW (IZQUIERDA)
+  useEffect(() => {
+    const slides = businessConfig.digitalCatalogImages || [];
+    if (slides.length <= 1) return;
+    const interval = setInterval(() => {
+      setCurrentSlideIdx(prev => (prev + 1) % slides.length);
+    }, 6000); // Slide cambia un poco más rápido para dinamismo
+    return () => clearInterval(interval);
+  }, [businessConfig.digitalCatalogImages]);
+
+  // 6. MONEDA
   const currencySymbol = useMemo(() => {
     const curr = currencies.find(c => c.code === businessConfig.primaryCurrency);
     return curr?.symbol || '$';
@@ -95,168 +93,154 @@ export const WebCatalogView: React.FC = () => {
   if (!businessConfig.isWebCatalogActive) {
     return (
       <div className="h-screen bg-white flex flex-col items-center justify-center p-8 text-center animate-in fade-in">
-        <div className="bg-slate-50 p-10 rounded-[3rem] mb-6 border border-slate-100">
-           <AlertCircle size={64} className="text-slate-300 mx-auto" />
-        </div>
-        <h1 className="text-3xl font-black text-slate-900 uppercase tracking-tighter mb-2">Catálogo Temporalmente Offline</h1>
-        <p className="text-slate-400 font-bold uppercase tracking-widest text-xs">Vuelva a consultar en unos minutos.</p>
+        <div className="bg-slate-50 p-10 rounded-[3rem] mb-6 border border-slate-100"><AlertCircle size={64} className="text-slate-300 mx-auto" /></div>
+        <h1 className="text-3xl font-black text-slate-900 uppercase tracking-tighter mb-2">Catálogo Offline</h1>
+        <p className="text-slate-400 font-bold uppercase tracking-widest text-xs">Vuelva pronto.</p>
       </div>
     );
   }
 
-  const currentPageItems = pages[currentPage] || [];
+  const activeScreen = screens[currentScreenIdx];
+  const slides = businessConfig.digitalCatalogImages || [];
 
   return (
-    <div className="h-screen w-screen bg-slate-50 text-slate-900 overflow-hidden flex flex-col font-sans select-none transition-colors duration-500">
+    <div className="h-screen w-screen bg-slate-950 text-white overflow-hidden flex font-sans select-none">
       <style>{`
-        .perspective-container {
-          perspective: 2500px;
+        @keyframes marquee {
+          0% { transform: translateX(100%); }
+          100% { transform: translateX(-100%); }
         }
-        .flip-board {
-          transition: transform 1.2s cubic-bezier(0.4, 0, 0.2, 1);
-          transform-style: preserve-3d;
-          height: 100%;
-          width: 100%;
+        .animate-marquee {
+          display: inline-block;
+          white-space: nowrap;
+          animation: marquee 30s linear infinite;
         }
-        .is-flipping {
-          transform: rotateX(-180deg);
-        }
-        .backface-hidden {
-          backface-visibility: hidden;
-        }
-        
-        @keyframes card-pulse {
-          0%, 100% { transform: scale(1); }
-          50% { transform: scale(1.02); }
-        }
-
-        @media (prefers-reduced-motion: no-preference) {
-          .animate-pulse-card {
-            animation: card-pulse 5s ease-in-out infinite;
-          }
+        .slide-fade {
+          transition: opacity 1.5s ease-in-out;
         }
       `}</style>
 
-      {/* HEADER TEMA BLANCO */}
-      <header className="h-[12vh] bg-white border-b border-slate-200 flex items-center justify-between px-10 shrink-0 z-50 shadow-sm">
-        <div className="flex items-center gap-6">
-          <div className="w-16 h-16 rounded-2xl bg-slate-900 p-2 shadow-xl overflow-hidden flex items-center justify-center">
-            {businessConfig.logo ? (
-              <img src={businessConfig.logo} className="w-full h-full object-contain" alt="Logo" />
-            ) : (
-              <Sparkles className="text-white" size={32} />
-            )}
-          </div>
-          <div>
-            <h1 className="text-2xl md:text-4xl font-black uppercase tracking-tighter leading-none text-slate-900">
-              {businessConfig.name}
-            </h1>
-            <div className="flex items-center gap-3 mt-1.5">
-              <span className="bg-slate-100 text-slate-500 text-[8px] font-black uppercase px-2 py-0.5 rounded tracking-widest border border-slate-200">Menú Actualizado</span>
-              <p className="text-slate-400 font-bold uppercase tracking-widest text-[10px] hidden md:block">
-                {businessConfig.address}
-              </p>
-            </div>
-          </div>
+      {/* LADO IZQUIERDO: VISUAL (Slideshow + Ticker) */}
+      <div className="w-[45%] h-full flex flex-col border-r border-white/10 bg-black">
+        {/* Slideshow */}
+        <div className="flex-1 relative overflow-hidden bg-slate-900">
+           {slides.length > 0 ? (
+             slides.map((img, idx) => (
+               <img 
+                 key={idx} 
+                 src={img} 
+                 className={`absolute inset-0 w-full h-full object-cover slide-fade ${idx === currentSlideIdx ? 'opacity-100 scale-105 transition-transform duration-[6000ms]' : 'opacity-0'}`} 
+                 alt="Promoción" 
+               />
+             ))
+           ) : (
+             <div className="h-full flex flex-col items-center justify-center text-slate-700 p-20 text-center">
+                <Sparkles size={120} className="mb-6 opacity-20" />
+                <h2 className="text-4xl font-black uppercase tracking-tighter">{businessConfig.name}</h2>
+                <p className="text-xs font-bold uppercase tracking-[0.3em] mt-4 opacity-50">Calidad y Servicio</p>
+             </div>
+           )}
+           
+           {/* Overlay Logo/Nombre */}
+           <div className="absolute top-10 left-10 z-20 flex items-center gap-6 bg-black/40 backdrop-blur-xl p-6 rounded-[2.5rem] border border-white/10 shadow-2xl">
+              <div className="w-20 h-20 bg-white rounded-3xl p-3 shadow-xl overflow-hidden flex items-center justify-center">
+                <img src={businessConfig.logo || ''} className="w-full h-full object-contain" alt="Logo" />
+              </div>
+              <div>
+                <h1 className="text-3xl font-black uppercase tracking-tighter text-white">{businessConfig.name}</h1>
+                <p className="text-[10px] font-black text-brand-400 uppercase tracking-widest mt-1">Menu Digital Pro</p>
+              </div>
+           </div>
         </div>
 
-        <a 
-          href={`tel:${businessConfig.phone}`}
-          className="bg-slate-900 hover:bg-slate-800 text-white px-8 py-4 rounded-[2rem] flex items-center gap-4 transition-all shadow-xl shadow-slate-200 group"
-        >
-          <div className="text-right">
-            <p className="text-[8px] font-black uppercase leading-none opacity-60 tracking-widest">Delivery / Pedidos</p>
-            <p className="text-lg font-black tracking-tighter leading-none">{businessConfig.phone}</p>
-          </div>
-          <div className="bg-white/10 p-2 rounded-xl group-hover:rotate-12 transition-transform">
-            <Phone size={24} />
-          </div>
-        </a>
-      </header>
+        {/* Ticker / Cintillo */}
+        <div className="h-[12vh] bg-brand-600 flex items-center overflow-hidden border-t border-white/20 shadow-[0_-10px_30px_rgba(0,0,0,0.5)]">
+           <div className="animate-marquee font-black text-3xl uppercase tracking-widest text-slate-950">
+              {businessConfig.digitalCatalogTicker || `BIENVENIDOS A ${businessConfig.name.toUpperCase()} • DISFRUTE NUESTROS PRODUCTOS FRESCOS • SERVICIO A DOMICILIO AL ${businessConfig.phone} •`}
+              &nbsp;&nbsp;&nbsp;&nbsp;
+              {businessConfig.digitalCatalogTicker || `BIENVENIDOS A ${businessConfig.name.toUpperCase()} • DISFRUTE NUESTROS PRODUCTOS FRESCOS • SERVICIO A DOMICILIO AL ${businessConfig.phone} •`}
+           </div>
+        </div>
+      </div>
 
-      {/* PANE PRINCIPAL (GRID 6x5) */}
-      <main className="flex-1 p-6 perspective-container bg-slate-50">
-        <div className={`flip-board ${isFlipping ? 'is-flipping' : ''}`}>
-          
-          <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 grid-rows-5 gap-3 h-full backface-hidden">
-            {currentPageItems.map((item, idx) => (
-              <div 
-                key={`${item.id}-${idx}`}
-                className="bg-white border border-slate-200 rounded-2xl p-3 flex flex-col h-full hover:border-brand-500 transition-all group relative overflow-hidden shadow-sm animate-pulse-card"
-              >
-                {/* CATEGORY TAG (Sin 'Catálogo') */}
-                <div className="absolute top-2 left-2 z-10">
-                  <span className="bg-white/90 backdrop-blur-md text-[7px] font-black uppercase px-2 py-0.5 rounded-full text-slate-500 border border-slate-100 shadow-sm">
-                    {item.displayCategory}
-                  </span>
-                </div>
+      {/* LADO DERECHO: PRODUCTOS (Lista Horizontal) */}
+      <div className="flex-1 h-full bg-slate-950 p-12 flex flex-col">
+        {/* Header Categoría */}
+        <div className="mb-10 flex justify-between items-end border-b-4 border-brand-500 pb-6">
+           <div>
+              <p className="text-[10px] font-black text-brand-400 uppercase tracking-[0.4em] mb-2">Sección Actual</p>
+              <h2 className="text-6xl font-black uppercase tracking-tighter text-white flex items-center gap-6">
+                <Layers size={48} className="text-brand-500" />
+                {activeScreen?.catName}
+              </h2>
+           </div>
+           <div className="text-right">
+              <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1">Pedidos al</p>
+              <p className="text-3xl font-black text-white tracking-tighter">{businessConfig.phone}</p>
+           </div>
+        </div>
 
-                {/* IMAGEN COMPACTA */}
-                <div className="aspect-[16/10] w-full rounded-xl overflow-hidden bg-slate-50 mb-3 shrink-0 flex items-center justify-center border border-slate-50">
-                  {item.image ? (
-                    <img src={item.image} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-1000" alt={item.name} />
-                  ) : (
-                    <UtensilsCrossed size={28} className="text-slate-200" />
-                  )}
-                </div>
+        {/* Lista Horizontal de Productos */}
+        <div className="flex-1 flex flex-col justify-start space-y-3">
+          {activeScreen?.items.map((item, idx) => (
+            <div 
+              key={`${item.id}-${idx}`}
+              className="bg-white/5 border border-white/5 p-4 rounded-3xl flex items-center gap-6 hover:bg-white/10 transition-all group animate-in slide-in-from-right duration-500"
+              style={{ animationDelay: `${idx * 100}ms` }}
+            >
+              {/* Mini Foto */}
+              <div className="w-16 h-16 rounded-2xl bg-slate-800 overflow-hidden shadow-xl shrink-0">
+                {item.image ? (
+                  <img src={item.image} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700" alt={item.name} />
+                ) : (
+                  <div className="w-full h-full flex items-center justify-center text-slate-700"><UtensilsCrossed size={24} /></div>
+                )}
+              </div>
 
-                {/* CONTENIDO DE TEXTO */}
-                <div className="flex flex-col justify-between flex-1 min-h-0">
-                  <h3 className="text-xs md:text-[13px] font-black uppercase tracking-tight leading-tight line-clamp-2 text-slate-800">
-                    {item.name}
-                  </h3>
-                  
-                  <div className="mt-auto flex items-end justify-between border-t border-slate-50 pt-2">
-                    <div className="flex flex-col">
-                      <span className="text-[14px] font-black text-brand-600 tracking-tighter">
-                        {currencySymbol}{item.price.toLocaleString()}
-                      </span>
-                    </div>
-                    <div className="bg-slate-50 p-1.5 rounded-lg border border-slate-100 opacity-0 lg:group-hover:opacity-100 transition-opacity">
-                      <ArrowRight size={12} className="text-slate-400" />
-                    </div>
-                  </div>
+              {/* Nombre */}
+              <div className="flex-1">
+                <h3 className="text-xl font-black uppercase tracking-tight text-white group-hover:text-brand-400 transition-colors line-clamp-1">
+                  {item.name}
+                </h3>
+                <div className="flex gap-2 mt-1">
+                   {item.categories.filter(c => c !== activeScreen.catName).map(c => (
+                     <span key={c} className="text-[7px] font-black text-slate-500 uppercase tracking-widest">{c}</span>
+                   ))}
                 </div>
               </div>
-            ))}
 
-            {/* RELLENO ESTRUCTURAL */}
-            {currentPageItems.length < ITEMS_PER_PAGE && Array.from({ length: ITEMS_PER_PAGE - currentPageItems.length }).map((_, i) => (
-              <div key={`empty-${i}`} className="bg-white/20 border border-slate-100 rounded-2xl hidden lg:block" />
-            ))}
-          </div>
+              {/* Precio */}
+              <div className="text-right shrink-0">
+                <div className="text-2xl font-black text-white tracking-tighter bg-slate-900 px-6 py-3 rounded-2xl border border-white/10 group-hover:border-brand-500/30 group-hover:bg-brand-500 group-hover:text-slate-950 transition-all">
+                  {currencySymbol}{item.price.toLocaleString()}
+                </div>
+              </div>
+            </div>
+          ))}
 
+          {(!activeScreen || activeScreen.items.length === 0) && (
+            <div className="h-full flex items-center justify-center text-slate-700 italic uppercase font-black text-xs tracking-widest">
+               No hay productos para mostrar en esta sección
+            </div>
+          )}
         </div>
-      </main>
 
-      {/* FOOTER - STATUS Y PAGINACIÓN */}
-      <footer className="h-[8vh] bg-white border-t border-slate-200 flex items-center justify-between px-10 shrink-0">
-        <div className="flex items-center gap-6">
-          <div className="flex gap-2.5">
-            {pages.map((_, idx) => (
-              <div 
-                key={idx} 
-                className={`h-1.5 rounded-full transition-all duration-700 ${idx === currentPage ? 'w-10 bg-slate-900 shadow-sm' : 'w-2 bg-slate-200'}`}
-              />
-            ))}
-          </div>
-          <span className="text-[9px] font-black uppercase text-slate-400 tracking-[0.2em]">
-            Página {currentPage + 1} de {pages.length || 1}
-          </span>
+        {/* Footer Indicadores de Pantalla */}
+        <div className="mt-8 flex justify-between items-center bg-white/5 p-6 rounded-[2rem]">
+           <div className="flex gap-3">
+              {screens.map((_, idx) => (
+                <div 
+                  key={idx} 
+                  className={`h-2 rounded-full transition-all duration-700 ${idx === currentScreenIdx ? 'w-16 bg-brand-500 shadow-[0_0_20px_rgba(14,165,233,0.6)]' : 'w-4 bg-slate-800'}`}
+                />
+              ))}
+           </div>
+           <div className="flex items-center gap-4">
+              <RefreshCw size={14} className="animate-spin text-brand-500" />
+              <span className="text-[9px] font-black uppercase text-slate-500 tracking-[0.2em]">Actualizado hace instantes</span>
+           </div>
         </div>
-        
-        <div className="flex items-center gap-4">
-          <div className="flex items-center gap-2 px-4 py-2 bg-slate-50 rounded-xl border border-slate-100">
-            <RefreshCw size={12} className="animate-spin text-brand-500" />
-            <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">
-              Sincronizado cada 10s
-            </span>
-          </div>
-          <span className="text-[9px] font-bold uppercase tracking-widest text-slate-400 hidden lg:block italic">
-            {businessConfig.footerMessage}
-          </span>
-        </div>
-      </footer>
+      </div>
     </div>
   );
 };

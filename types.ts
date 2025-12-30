@@ -116,6 +116,10 @@ export interface BusinessConfig {
   peripherals?: PeripheralsSettings;
   isWebCatalogActive?: boolean;
   webCatalogPort?: number;
+  // NUEVOS CAMPOS CATÁLOGO DIGITAL
+  digitalCatalogImages?: string[];
+  digitalCatalogTicker?: string;
+  digitalCatalogRotationSeconds?: number;
 }
 
 export interface User {
