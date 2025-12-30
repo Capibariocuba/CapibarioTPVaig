@@ -239,22 +239,23 @@ export const POS: React.FC = () => {
   };
 
   const getTicketHTML = (ticket: Ticket | Sale) => {
+    const ticketRate = rates[ticket.currency] || 1;
     const symbol = currencies.find(c => c.code === ticket.currency)?.symbol || '$';
     const dateStr = new Date(ticket.timestamp).toLocaleString();
     const client = clients.find(c => c.id === ticket.clientId);
     const totalPaid = ticket.payments.reduce((acc, p) => acc + p.amount, 0);
     const overpay = totalPaid - ticket.total;
-    const rate = rates[ticket.currency] || 1;
-    const changeCUP = overpay > 0.0001 ? round2(overpay * rate) : 0;
+    const changeCUP = overpay > 0.0001 ? round2(overpay * ticketRate) : 0;
 
     // Saneamiento de variables dinámicas usando safeText (trunca ANTES de escapar)
-    const safeBizName = safeText(businessConfig.name, { upper: true });
-    const safeAddress = safeText(businessConfig.address);
-    const safePhone = safeText(businessConfig.phone);
-    const safeTicketId = safeText(ticket.id.slice(-6));
-    const safeSeller = safeText(ticket.sellerName || 'SISTEMA', { upper: true });
-    const safeClient = safeText(client?.name || 'CONSUMIDOR FINAL', { upper: true });
-    const safeFooter = safeText(businessConfig.footerMessage, { upper: true });
+    const safeBizName = safeText(businessConfig.name, { maxLen: 28, upper: true });
+    const safeAddress = safeText(businessConfig.address, { maxLen: 60 });
+    const safePhone = safeText(businessConfig.phone, { maxLen: 20 });
+    const safeTicketId = safeText(ticket.id.slice(-6), { maxLen: 6 });
+    const safeSeller = safeText(ticket.sellerName || 'SISTEMA', { maxLen: 30, upper: true });
+    const safeClient = safeText(client?.name || 'CONSUMIDOR FINAL', { maxLen: 30, upper: true });
+    const safeFooter = safeText(businessConfig.footerMessage, { maxLen: 80, upper: true });
+    const safeCurrencyLabel = safeText(ticket.currency, { maxLen: 5, upper: true });
 
     return `
       <div class="center"><h2 class="bold" style="margin:0; font-size: 14pt;">${safeBizName}</h2><p style="margin:1mm 0; font-size: 8pt;">${safeAddress}<br>Tel: ${safePhone}</p><p class="bold" style="font-size: 9pt; margin-top: 2mm;">TICKET: #${safeTicketId}</p></div>
@@ -262,14 +263,19 @@ export const POS: React.FC = () => {
       <div style="font-size: 8pt; line-height: 1.4;">FECHA: ${dateStr}<br>VENDEDOR: ${safeSeller}<br>CLIENTE: ${safeClient}</div>
       <div class="dashed"></div>
       <table><thead><tr class="bold" style="border-bottom: 1px solid #000;"><th class="col-desc">DESC.</th><th class="col-qty">CT</th><th class="col-total">TOTAL</th></tr></thead><tbody>
-          ${ticket.items.map(i => `<tr><td class="col-desc">${safeText(i.name, { maxLen: 20, upper: true })}</td><td class="col-qty">${i.quantity}</td><td class="col-total">${symbol}${formatNum(i.quantity * i.finalPrice / (ticket.currency === 'CUP' ? 1 : rates[ticket.currency]))}</td></tr>`).join('')}
+          ${ticket.items.map(i => {
+            const itemFinalAmount = i.quantity * i.finalPrice / (ticket.currency === 'CUP' ? 1 : ticketRate);
+            return `<tr><td class="col-desc">${safeText(i.name, { maxLen: 20, upper: true })}</td><td class="col-qty">${i.quantity}</td><td class="col-total">${symbol}${formatNum(itemFinalAmount)}</td></tr>`;
+          }).join('')}
       </tbody></table>
       <div class="dashed"></div>
-      <div style="font-size: 10pt;"><div style="display:flex; justify-content: space-between;"><span>SUBTOTAL:</span><span>${symbol}${formatNum(ticket.subtotal)}</span></div>${ticket.discount > 0 ? `<div style="display:flex; justify-content: space-between;"><span>DESC.:</span><span>-${symbol}${formatNum(ticket.discount)}</span></div>` : ''}<div style="display:flex; justify-content: space-between;" class="bold"><span>TOTAL (${ticket.currency}):</span><span>${symbol}${formatNum(ticket.total)}</span></div></div>
+      <div style="font-size: 10pt;"><div style="display:flex; justify-content: space-between;"><span>SUBTOTAL:</span><span>${symbol}${formatNum(ticket.subtotal)}</span></div>${ticket.discount > 0 ? `<div style="display:flex; justify-content: space-between;"><span>DESC.:</span><span>-${symbol}${formatNum(ticket.discount)}</span></div>` : ''}<div style="display:flex; justify-content: space-between;" class="bold"><span>TOTAL (${safeCurrencyLabel}):</span><span>${symbol}${formatNum(ticket.total)}</span></div></div>
       <div class="dashed"></div>
       <div style="font-size: 9pt;"><p class="bold" style="margin-bottom: 1mm;">DETALLE DE PAGO:</p>
         ${ticket.payments.map(p => {
-          let line = `<div style="display:flex; justify-content: space-between;"><span>${p.method === 'CREDIT' ? 'CRÉDITO CLIENTE' : p.method.toUpperCase()} (${p.currency}):</span><span class="bold">${currencies.find(c => c.code === p.currency)?.symbol || '$'}${formatNum(p.amount)}</span></div>`;
+          const safeMethodLabel = p.method === 'CREDIT' ? 'CRÉDITO CLIENTE' : safeText(p.method, { maxLen: 18, upper: true });
+          const safePayCurrency = safeText(p.currency, { maxLen: 5, upper: true });
+          let line = `<div style="display:flex; justify-content: space-between;"><span>${safeMethodLabel} (${safePayCurrency}):</span><span class="bold">${currencies.find(c => c.code === p.currency)?.symbol || '$'}${formatNum(p.amount)}</span></div>`;
           if (p.method === 'CREDIT' && ticket.clientRemainingCredit !== undefined) {
              line += `<div style="display:flex; justify-content: space-between; font-size: 8pt; color: #444;"><span>CRÉDITO RESTANTE:</span><span>₱${formatNum(ticket.clientRemainingCredit)}</span></div>`;
           }

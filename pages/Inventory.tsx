@@ -425,13 +425,14 @@ export const Inventory: React.FC = () => {
             }
         };
 
-        // Auditoría Global
+        // Auditoría Global - SE USA paymentMethod 'NONE' PARA NO AFECTAR LA CAJA
         executeLedgerTransaction({
             type: 'STOCK_IN',
             direction: 'IN',
             amount: qty * unitCost,
             currency: businessConfig.primaryCurrency,
-            description: `Restock: ${targetLabel} (${prev.name}) +${qty} Almacén: ${activeWarehouse.name}.`
+            description: `Restock: ${targetLabel} (${prev.name}) +${qty} Almacén: ${activeWarehouse.name}.`,
+            paymentMethod: 'NONE'
         });
 
         return {
@@ -1426,7 +1427,7 @@ export const Inventory: React.FC = () => {
 
       {isStockEntryModalOpen && editingProduct && (
         <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-md flex items-center justify-center z-[250] p-4 animate-in fade-in">
-          <div className="bg-white rounded-[3rem] p-8 w-full max-w-lg shadow-2xl animate-in zoom-in space-y-6">
+          <div className="bg-white rounded-[3rem] p-8 w-full max-lg shadow-2xl animate-in zoom-in space-y-6">
             <div className="flex justify-between items-center border-b border-gray-100 pb-4">
               <div>
                 <h3 className="text-xl font-black text-slate-900 uppercase tracking-tighter flex items-center gap-3">
