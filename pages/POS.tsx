@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useMemo } from 'react';
 import { useStore } from '../context/StoreContext';
 import { 
@@ -294,20 +295,37 @@ export const POS: React.FC = () => {
   };
 
   const handleConfirmSale = (payments: PaymentDetail[]) => {
-    const ticket = processSale({ 
-        items: cart, 
-        subtotal: cartSubtotal, 
-        discount: round2(couponDiscountAmount + bogoInfo.totalDiscount), 
-        couponDiscount: couponDiscountAmount,
-        bogoDiscount: bogoInfo.totalDiscount,
-        bogoAppsCount: bogoInfo.totalApps,
-        total: cartTotal, 
-        payments, 
-        currency: posCurrency, 
-        clientId: selectedClientId, 
-        appliedCouponId: appliedCoupon?.id 
-    });
-    if (ticket) { setCurrentTicket(ticket); setShowTicketModal(true); clearCart(); setAppliedCoupon(null); setSelectedClientId(null); setShowPaymentModal(false); }
+    try {
+      const ticket = processSale({ 
+          items: cart, 
+          subtotal: cartSubtotal, 
+          discount: round2(couponDiscountAmount + bogoInfo.totalDiscount), 
+          couponDiscount: couponDiscountAmount,
+          bogoDiscount: bogoInfo.totalDiscount,
+          bogoAppsCount: bogoInfo.totalApps,
+          total: cartTotal, 
+          payments, 
+          currency: posCurrency, 
+          clientId: selectedClientId, 
+          appliedCouponId: appliedCoupon?.id 
+      });
+
+      if (ticket) { 
+          setCurrentTicket(ticket); 
+          setShowTicketModal(true); 
+          clearCart(); 
+          setAppliedCoupon(null); 
+          setSelectedClientId(null); 
+          setShowPaymentModal(false); 
+      } else {
+          // Si processSale retorna null, las notificaciones internas ya se dispararon.
+          // No limpiamos el carrito para permitir reintentos.
+          console.warn("Sale processing returned null - possible validation fail or managed exception.");
+      }
+    } catch (err) {
+      console.error("UNHANDLED CONFIRM SALE ERROR:", err);
+      notify("Ocurrió un error inesperado al cerrar la venta. Revise la consola.", "error");
+    }
   };
 
   // --- LÓGICA DE REEMBOLSOS ---

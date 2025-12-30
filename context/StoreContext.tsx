@@ -194,148 +194,188 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   }, [currentUser]);
 
   const processSale = useCallback((saleData: any): Ticket | null => {
-    const { items, total, payments, currency, note, appliedCouponId, couponDiscount, bogoDiscount, bogoAppsCount } = saleData;
-    const activeTerminal = businessConfig.posTerminals?.find(t => t.id === activePosTerminalId);
-    const warehouseId = activeTerminal?.warehouseId || 'wh-default';
+    try {
+      const { items, total, payments, currency, note, appliedCouponId, couponDiscount, bogoDiscount, bogoAppsCount } = saleData;
+      
+      // 1. Validaciones Críticas (Pre-ejecución)
+      if (!items || items.length === 0) { notify("Carrito vacío", "error"); return null; }
+      if (!activeShift) { notify("No hay un turno abierto", "error"); return null; }
+      if (!currentUser) { notify("Sesión no válida", "error"); return null; }
 
-    if (appliedCouponId) {
-      const coupon = coupons.find(c => c.id === appliedCouponId);
-      if (coupon && coupon.usageLimit > 0 && coupon.currentUsages >= coupon.usageLimit) {
-        notify("El cupón ha alcanzado su límite de usos", "error");
-        return null;
-      }
-    }
-
-    for (const item of items) {
-      const product = products.find(p => p.id === item.id);
-      if (!product) continue;
-      if (item.selectedVariantId) {
-        const variant = product.variants.find(v => v.id === item.selectedVariantId);
-        if (!variant || (variant.stock || 0) < item.quantity) {
-          notify(`Stock insuficiente para variante de ${product.name}`, "error");
-          return null;
-        }
-      } else {
-        if ((product.stock || 0) < item.quantity) {
-          notify(`Stock insuficiente para ${product.name}`, "error");
+      // 1.1 Validar Cupón si existe
+      if (appliedCouponId) {
+        const coupon = coupons.find(c => c.id === appliedCouponId);
+        if (coupon && coupon.usageLimit > 0 && coupon.currentUsages >= coupon.usageLimit) {
+          notify("El cupón ha alcanzado su límite de usos", "error");
           return null;
         }
       }
-    }
 
-    const totalPaidInSaleCurrency = payments.reduce((acc: number, p: any) => acc + p.amount, 0);
-    const overpay = totalPaidInSaleCurrency - total;
-    const changeInCUP = overpay > 0.01 ? convertCurrency(overpay, currency, 'CUP') : 0;
-
-    const updatedProducts = products.map(p => {
-      const cartItem = items.find((i: any) => i.id === p.id);
-      if (!cartItem) return p;
-      const newP = { ...p };
-      if (cartItem.selectedVariantId) {
-        newP.variants = newP.variants.map(v => 
-          v.id === cartItem.selectedVariantId ? { ...v, stock: (v.stock || 0) - cartItem.quantity } : v
-        );
-      } else {
-        newP.stock = (newP.stock || 0) - cartItem.quantity;
+      // 1.2 Validar Stock de todos los items
+      for (const item of items) {
+        const product = products.find(p => p.id === item.id);
+        if (!product) { notify(`Producto no encontrado: ${item.name}`, "error"); return null; }
+        if (item.selectedVariantId) {
+          const variant = product.variants.find(v => v.id === item.selectedVariantId);
+          if (!variant || (variant.stock || 0) < item.quantity) {
+            notify(`Stock insuficiente para variante de ${product.name}`, "error");
+            return null;
+          }
+        } else {
+          if ((product.stock || 0) < item.quantity) {
+            notify(`Stock insuficiente para ${product.name}`, "error");
+            return null;
+          }
+        }
       }
-      newP.history = [{
-        id: generateUniqueId(),
-        timestamp: new Date().toISOString(),
-        type: 'STOCK_ADJUST',
-        userName: currentUser?.name || 'Sistema',
-        details: `Venta: -${cartItem.quantity} unidades`
-      }, ...(newP.history || [])];
-      return newP;
-    });
-    setProducts(updatedProducts);
 
-    let finalRemainingCredit: number | undefined = undefined;
+      // 2. Preparación de Datos (Cálculos locales)
+      const totalPaidInSaleCurrency = payments.reduce((acc: number, p: any) => acc + p.amount, 0);
+      const overpay = totalPaidInSaleCurrency - total;
+      const changeInCUP = overpay > 0.009 ? convertCurrency(overpay, currency, 'CUP') : 0;
+      const txId = generateUniqueId();
+      const saleTimestamp = new Date().toISOString();
 
-    const txId = generateUniqueId();
-    payments.forEach((p: PaymentDetail) => {
-      executeLedgerTransaction({
-        type: 'SALE',
-        direction: 'IN',
-        amount: p.amount,
-        currency: p.currency,
-        paymentMethod: p.method,
-        description: `Venta ${txId.slice(-6)}`,
-        txId
+      // 3. Preparación de Cambios de Estado (Rollback safety)
+      // Generamos el nuevo array de productos localmente
+      const nextProducts = products.map(p => {
+        const cartItem = items.find((i: any) => i.id === p.id);
+        if (!cartItem) return p;
+        const newP = { ...p };
+        if (cartItem.selectedVariantId) {
+          newP.variants = newP.variants.map(v => 
+            v.id === cartItem.selectedVariantId ? { ...v, stock: (v.stock || 0) - cartItem.quantity } : v
+          );
+        } else {
+          newP.stock = (newP.stock || 0) - cartItem.quantity;
+        }
+        newP.history = [{
+          id: generateUniqueId(),
+          timestamp: saleTimestamp,
+          type: 'STOCK_ADJUST',
+          userName: currentUser.name,
+          details: `Venta: -${cartItem.quantity} unidades (Ticket ${txId.slice(-6)})`
+        }, ...(newP.history || [])];
+        return newP;
       });
 
-      if (p.method === 'CREDIT' && selectedClientId) {
-        const rate = currencies.find(c => c.code === p.currency)?.rate || 1;
-        const amountInCUP = p.currency === 'CUP' ? p.amount : p.amount * rate;
-        
-        const currentClient = clients.find(cl => cl.id === selectedClientId);
-        if (currentClient) {
-          finalRemainingCredit = Math.max(0, (currentClient.creditBalance || 0) - amountInCUP);
-        }
+      // 4. Ejecución del Ledger (Local para evitar efectos secundarios parciales)
+      const newLedgerEntries: LedgerEntry[] = [];
+      let finalRemainingCredit: number | undefined = undefined;
+      let nextClients = [...clients];
 
+      payments.forEach((p: PaymentDetail) => {
+        const entry: LedgerEntry = {
+          id: generateUniqueId(),
+          timestamp: saleTimestamp,
+          type: 'SALE',
+          direction: 'IN',
+          amount: p.amount,
+          currency: p.currency,
+          paymentMethod: p.method,
+          userId: currentUser.id,
+          userName: currentUser.name,
+          description: `Venta ${txId.slice(-6)}`,
+          affectsCash: p.method === 'CASH',
+          txId
+        };
+        newLedgerEntries.push(entry);
+
+        if (p.method === 'CREDIT' && selectedClientId) {
+          const rate = currencies.find(c => c.code === p.currency)?.rate || 1;
+          const amountInCUP = p.currency === 'CUP' ? p.amount : p.amount * rate;
+          
+          const clientIndex = nextClients.findIndex(cl => cl.id === selectedClientId);
+          if (clientIndex !== -1) {
+            const currentBalance = nextClients[clientIndex].creditBalance || 0;
+            const newBalance = Math.max(0, currentBalance - amountInCUP);
+            finalRemainingCredit = newBalance;
+            
+            nextClients[clientIndex] = {
+              ...nextClients[clientIndex],
+              creditBalance: newBalance,
+              balance: newBalance,
+              updatedAt: saleTimestamp
+            };
+          }
+        }
+      });
+
+      if (changeInCUP > 0) {
+        newLedgerEntries.push({
+          id: generateUniqueId(),
+          timestamp: saleTimestamp,
+          type: 'EXCHANGE',
+          direction: 'OUT',
+          amount: changeInCUP,
+          currency: 'CUP',
+          paymentMethod: 'CASH',
+          userId: currentUser.id,
+          userName: currentUser.name,
+          description: `Cambio Venta ${txId.slice(-6)}`,
+          affectsCash: true,
+          txId
+        });
+      }
+
+      // 5. Aplicar Todos los Cambios de Estado Atómicamente
+      setProducts(nextProducts);
+      setLedger(prev => [...prev, ...newLedgerEntries]);
+      setClients(nextClients);
+      
+      if (appliedCouponId) {
+        setCoupons(prev => prev.map(c => 
+          c.id === appliedCouponId ? { ...c, currentUsages: (c.currentUsages || 0) + 1 } : c
+        ));
+      }
+
+      const finalTicket: Ticket = {
+        id: txId,
+        items,
+        subtotal: saleData.subtotal,
+        discount: saleData.discount,
+        couponDiscount,
+        bogoDiscount,
+        bogoAppsCount,
+        total,
+        payments,
+        currency,
+        note,
+        appliedCouponId,
+        clientId: selectedClientId || undefined,
+        sellerName: currentUser.name,
+        clientRemainingCredit: finalRemainingCredit,
+        timestamp: saleTimestamp
+      };
+
+      setSales(prev => [...prev, { ...finalTicket, shiftId: activeShift.id, date: saleTimestamp }]);
+      
+      if (selectedClientId) {
+        const historyItem: PurchaseHistoryItem = {
+          id: generateUniqueId(),
+          saleId: txId,
+          timestamp: saleTimestamp,
+          total,
+          currency,
+          itemsCount: items.reduce((acc: number, item: any) => acc + (item.quantity || 0), 0)
+        };
         setClients(prev => prev.map(c => c.id === selectedClientId ? { 
           ...c, 
-          creditBalance: Math.max(0, (c.creditBalance || 0) - amountInCUP),
-          balance: Math.max(0, (c.creditBalance || 0) - amountInCUP),
-          updatedAt: new Date().toISOString() 
+          purchaseHistory: [historyItem, ...(c.purchaseHistory || [])], 
+          updatedAt: saleTimestamp 
         } : c));
       }
-    });
+      
+      notify("Venta procesada con éxito", "success");
+      setSelectedClientId(null);
+      return finalTicket;
 
-    if (changeInCUP > 0) {
-      executeLedgerTransaction({
-        type: 'EXCHANGE',
-        direction: 'OUT',
-        amount: changeInCUP,
-        currency: 'CUP',
-        paymentMethod: 'CASH',
-        description: `Cambio Venta ${txId.slice(-6)}`,
-        txId
-      });
+    } catch (error) {
+      console.error("FATAL SALE PROCESS ERROR:", error);
+      notify("Error crítico al procesar venta. El estado ha sido protegido.", "error");
+      return null;
     }
-
-    if (appliedCouponId) {
-      setCoupons(prev => prev.map(c => 
-        c.id === appliedCouponId ? { ...c, currentUsages: (c.currentUsages || 0) + 1 } : c
-      ));
-    }
-
-    const finalTicket: Ticket = {
-      id: txId,
-      items,
-      subtotal: saleData.subtotal,
-      discount: saleData.discount,
-      couponDiscount,
-      bogoDiscount,
-      bogoAppsCount,
-      total,
-      payments,
-      currency,
-      note,
-      appliedCouponId,
-      clientId: selectedClientId || undefined,
-      sellerName: currentUser?.name || 'Sistema',
-      clientRemainingCredit: finalRemainingCredit,
-      timestamp: new Date().toISOString()
-    };
-
-    setSales(prev => [...prev, { ...finalTicket, shiftId: activeShift?.id || 'NO-SHIFT', date: new Date().toISOString() }]);
-    
-    if (selectedClientId) {
-      const historyItem: PurchaseHistoryItem = {
-        id: generateUniqueId(),
-        saleId: txId,
-        timestamp: finalTicket.timestamp,
-        total,
-        currency,
-        itemsCount: items.reduce((acc: number, item: any) => acc + (item.quantity || 0), 0)
-      };
-      setClients(prev => prev.map(c => c.id === selectedClientId ? { ...c, purchaseHistory: [historyItem, ...(c.purchaseHistory || [])], updatedAt: new Date().toISOString() } : c));
-    }
-    
-    notify("Venta procesada con éxito", "success");
-    setSelectedClientId(null);
-    return finalTicket;
-  }, [products, businessConfig, activePosTerminalId, activeShift, currentUser, convertCurrency, notify, selectedClientId, currencies, clients, coupons, executeLedgerTransaction]);
+  }, [products, activeShift, currentUser, convertCurrency, notify, selectedClientId, currencies, clients, coupons]);
 
   const processRefund = useCallback((saleId: string, refundItems: RefundItem[], authUser: User, source: 'CASHBOX' | 'OUTSIDE_CASHBOX'): boolean => {
     const sale = sales.find(s => s.id === saleId);

@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, Component, ErrorInfo, ReactNode } from 'react';
 import { StoreProvider, useStore } from './context/StoreContext';
 import { Sidebar } from './components/Sidebar';
 import { POS } from './pages/POS';
@@ -11,8 +11,49 @@ import { Ledger } from './pages/Ledger';
 import { Employees } from './pages/Employees';
 import { WebCatalogView } from './pages/WebCatalogView';
 import { View, Role } from './types';
-import { Key, Cpu, Globe, MessageCircle, AlertCircle, Menu } from 'lucide-react';
+import { Key, Cpu, Globe, MessageCircle, AlertCircle, Menu, RefreshCcw } from 'lucide-react';
 import { CAPIBARIO_LOGO } from './constants';
+
+class ErrorBoundary extends Component<{children: ReactNode}, {hasError: boolean}> {
+  constructor(props: {children: ReactNode}) {
+    super(props);
+    this.state = { hasError: false };
+  }
+
+  static getDerivedStateFromError(_: Error) {
+    return { hasError: true };
+  }
+
+  componentDidCatch(error: Error, errorInfo: ErrorInfo) {
+    console.error("CAPIBARIO CRITICAL UI ERROR:", error, errorInfo);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="h-full w-full flex items-center justify-center bg-gray-50 p-6">
+          <div className="bg-white p-12 rounded-[3rem] shadow-2xl text-center max-w-lg border border-red-100">
+            <div className="w-20 h-20 bg-red-50 text-red-500 rounded-full flex items-center justify-center mx-auto mb-6">
+              <AlertCircle size={40} />
+            </div>
+            <h2 className="text-2xl font-black text-slate-800 uppercase tracking-tighter mb-4">Error de Interfaz</h2>
+            <p className="text-slate-500 text-sm font-bold leading-relaxed mb-8 uppercase tracking-widest">
+              Lo sentimos, la vista actual ha experimentado un fallo inesperado. Sus datos están seguros.
+            </p>
+            <button 
+              onClick={() => window.location.reload()} 
+              className="w-full bg-slate-900 text-white font-black py-5 rounded-2xl flex items-center justify-center gap-3 hover:bg-brand-600 transition-all uppercase text-[10px] tracking-widest shadow-xl"
+            >
+              <RefreshCcw size={18} /> Recargar Aplicación
+            </button>
+          </div>
+        </div>
+      );
+    }
+
+    return this.props.children;
+  }
+}
 
 const ActivationScreen: React.FC = () => {
   const { applyLicenseKey, businessConfig } = useStore();
@@ -179,7 +220,9 @@ const MainLayout: React.FC = () => {
           </button>
         )}
         
-        {renderContent()}
+        <ErrorBoundary>
+          {renderContent()}
+        </ErrorBoundary>
       </main>
     </div>
   );
