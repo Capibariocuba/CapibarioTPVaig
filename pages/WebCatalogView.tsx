@@ -134,7 +134,7 @@ export const WebCatalogView: React.FC = () => {
     return (
       <div className="h-screen bg-slate-950 flex flex-col items-center justify-center p-8 text-center animate-in fade-in">
         <div className="bg-slate-900 p-10 rounded-[3rem] mb-6 border border-slate-800"><AlertCircle size={64} className="text-slate-700 mx-auto" /></div>
-        <h1 className="text-3xl font-black text-white uppercase tracking-tighter mb-2">Catálogo Offline</h1>
+        <h1 className="text-3xl font-black text-white uppercase tracking-tighter mb-2">Estamos en Cierre</h1>
         <p className="text-slate-500 font-bold uppercase tracking-widest text-xs">Vuelva pronto.</p>
       </div>
     );
