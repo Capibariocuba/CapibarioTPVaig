@@ -1,12 +1,13 @@
 import React, { useState, useRef, useMemo, useEffect } from 'react';
 import { useStore } from '../context/StoreContext';
-import { Role, User, BusinessConfig, CurrencyConfig, PaymentMethodType, LicenseTier, Currency, POSStoreTerminal, View } from '../types';
-// Added MessageCircle to the imports below to fix the "Cannot find name 'MessageCircle'" error
+import { Role, User, BusinessConfig, CurrencyConfig, PaymentMethodType, LicenseTier, Currency, POSStoreTerminal, View, PaymentMethodConfig } from '../types';
 import { 
   Lock, Building2, User as UserIcon, DollarSign, ShieldCheck, 
   Save, Plus, Trash2, Key, Crown, Printer, Barcode, CreditCard, 
   Phone, Mail, MapPin, Hash, Receipt, AlertCircle, Banknote, Globe, Wallet, Camera, Monitor, LogIn, LogOut, CheckSquare, Square, X,
-  ArrowRight, Sparkles, Cloud, Zap, ExternalLink, Copy, Info, QrCode, Image as ImageIcon, Timer, Palette, Cpu, MessageCircle
+  ArrowRight, Sparkles, Cloud, Zap, ExternalLink, Copy, Info, QrCode, Image as ImageIcon, Timer, Palette, Cpu, MessageCircle, Check, ShieldAlert,
+  // Fix: Added missing Edit3 import and aliased History to avoid conflict with global window.History
+  Edit3, History as HistoryIcon
 } from 'lucide-react';
 
 export const Configuration: React.FC = () => {
@@ -39,6 +40,10 @@ export const Configuration: React.FC = () => {
     rate: 1,
     allowedPaymentMethods: ['CASH']
   });
+
+  // ESTADOS PARA MÉTODOS DE PAGO
+  const [showMethodModal, setShowMethodModal] = useState(false);
+  const [editingMethod, setEditingMethod] = useState<Partial<PaymentMethodConfig> | null>(null);
 
   const logoInputRef = useRef<HTMLInputElement>(null);
   const slideInputRef = useRef<HTMLInputElement>(null);
@@ -144,6 +149,35 @@ export const Configuration: React.FC = () => {
     } else {
       notify("Llave de licencia inválida", "error");
     }
+  };
+
+  // LÓGICA DE MÉTODOS DE PAGO
+  const handleSaveMethod = () => {
+    if (!editingMethod?.label?.trim()) { notify("Etiqueta obligatoria", "error"); return; }
+    
+    let updatedMethods = [...(tempBiz.paymentMethods || [])];
+    if (updatedMethods.some(m => m.id === editingMethod.id && m.id !== (editingMethod as any).originalId)) {
+        // Solo aplica si el ID fuera editable, pero usualmente es constante por lógica de TPV
+    }
+
+    const existsIdx = updatedMethods.findIndex(m => m.id === editingMethod.id);
+    if (existsIdx > -1) {
+        updatedMethods[existsIdx] = editingMethod as PaymentMethodConfig;
+    } else {
+        updatedMethods.push(editingMethod as PaymentMethodConfig);
+    }
+
+    setTempBiz({ ...tempBiz, paymentMethods: updatedMethods });
+    setShowMethodModal(false);
+    setEditingMethod(null);
+    notify("Método de pago actualizado en borrador", "success");
+  };
+
+  const toggleMethodStatus = (id: PaymentMethodType, field: 'enabled' | 'showInTicket') => {
+    const updated = tempBiz.paymentMethods.map(m => 
+        m.id === id ? { ...m, [field]: !m[field] } : m
+    );
+    setTempBiz({ ...tempBiz, paymentMethods: updated });
   };
 
   if (!isAuthenticated && !isRescueMode && users.length > 0) {
@@ -272,6 +306,7 @@ export const Configuration: React.FC = () => {
 
       {activeTab === 'FINANCE' && !isRescueMode && (
         <div className="space-y-10 animate-in slide-in-from-bottom-6">
+          {/* GESTIÓN DE DIVISAS */}
           <section className="bg-white p-10 rounded-[3rem] shadow-sm border border-gray-100">
             <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-8">
               <div><h3 className="text-2xl font-black text-slate-800 uppercase tracking-tighter flex items-center gap-3"><Banknote className="text-brand-500" /> Gestión de Divisas</h3><p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Tasas de cambio y métodos vinculados</p></div>
@@ -296,11 +331,46 @@ export const Configuration: React.FC = () => {
               })}
             </div>
           </section>
+
+          {/* GESTIÓN DE MÉTODOS DE PAGO (RESTAURADO) */}
+          <section className="bg-white p-10 rounded-[3rem] shadow-sm border border-gray-100">
+             <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-8">
+                <div><h3 className="text-2xl font-black text-slate-800 uppercase tracking-tighter flex items-center gap-3"><Wallet className="text-brand-500" /> Canales de Cobro</h3><p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Configuración de pasarelas y efectivo</p></div>
+                <button onClick={() => { setEditingMethod({ id: 'CASH', label: '', enabled: true, showInTicket: true }); setShowMethodModal(true); }} className="w-full md:w-auto bg-slate-900 text-white px-6 py-3 rounded-2xl font-black text-[10px] uppercase tracking-widest flex items-center justify-center gap-2 shadow-xl hover:bg-brand-600 transition-all"><Plus size={16} /> Añadir Canal</button>
+             </div>
+             
+             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                {tempBiz.paymentMethods.map(pm => (
+                   <div key={pm.id} className={`p-6 rounded-[2.5rem] border-2 transition-all ${pm.enabled ? 'bg-white border-slate-50 shadow-sm' : 'bg-gray-50/50 border-gray-100 opacity-60 grayscale'}`}>
+                      <div className="flex justify-between items-start mb-4">
+                         <div className="p-3 bg-slate-100 rounded-xl text-slate-600"><CreditCard size={20}/></div>
+                         <div className="flex gap-1">
+                            <button onClick={() => { setEditingMethod(pm); setShowMethodModal(true); }} className="p-2 text-slate-400 hover:text-brand-600"><Edit3 size={16}/></button>
+                            <button onClick={() => { if(confirm('¿Eliminar método?')) setTempBiz({...tempBiz, paymentMethods: tempBiz.paymentMethods.filter(m => m.id !== pm.id)}); }} className="p-2 text-red-300 hover:text-red-500"><Trash2 size={16}/></button>
+                         </div>
+                      </div>
+                      <h4 className="font-black text-slate-800 uppercase text-xs tracking-widest mb-1">{pm.label}</h4>
+                      <p className="text-[8px] font-black text-slate-400 uppercase mb-4">ID TÉCNICO: {pm.id}</p>
+                      
+                      <div className="flex gap-2">
+                         <button onClick={() => toggleMethodStatus(pm.id, 'enabled')} className={`flex-1 py-2 px-3 rounded-xl text-[8px] font-black uppercase transition-all flex items-center justify-center gap-2 ${pm.enabled ? 'bg-emerald-50 text-emerald-600' : 'bg-slate-100 text-slate-400'}`}>
+                            {pm.enabled ? <Check size={10}/> : <X size={10}/>} {pm.enabled ? 'ACTIVO' : 'INACTIVO'}
+                         </button>
+                         <button onClick={() => toggleMethodStatus(pm.id, 'showInTicket')} className={`flex-1 py-2 px-3 rounded-xl text-[8px] font-black uppercase transition-all flex items-center justify-center gap-2 ${pm.showInTicket ? 'bg-brand-50 text-brand-600' : 'bg-slate-100 text-slate-400'}`}>
+                            <Printer size={10}/> {pm.showInTicket ? 'EN TICKET' : 'OCULTO'}
+                         </button>
+                      </div>
+                   </div>
+                ))}
+             </div>
+          </section>
+
+          <button onClick={saveBusinessInfo} className="w-full bg-brand-600 text-white font-black py-8 rounded-[2.5rem] shadow-2xl hover:bg-brand-500 transition-all flex items-center justify-center gap-4 uppercase tracking-[0.3em] text-xs"><Save size={24} /> Guardar Cambios Financieros</button>
         </div>
       )}
 
       {activeTab === 'LICENSE' && !isRescueMode && (
-        <div className="space-y-8 animate-in slide-in-from-bottom-6">
+        <div className="space-y-12 animate-in slide-in-from-bottom-6">
           <section className="bg-white p-10 rounded-[3rem] shadow-sm border border-gray-100">
             <h3 className="text-2xl font-black text-slate-800 uppercase tracking-tighter flex items-center gap-3 mb-8"><Crown className="text-brand-500" /> Estatus de Suscripción</h3>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-10">
@@ -330,6 +400,124 @@ export const Configuration: React.FC = () => {
                </div>
             </div>
           </section>
+
+          {/* PANEL COMPARATIVO DE PLANES (RESTAURADO) */}
+          <section className="space-y-8">
+             <div className="text-center">
+                <h3 className="text-2xl font-black text-slate-800 uppercase tracking-tighter">Comparativa de Prestaciones</h3>
+                <p className="text-[10px] text-slate-400 font-bold uppercase tracking-[0.2em] mt-1">Escale según las necesidades de su negocio</p>
+             </div>
+             
+             <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                {/* PLAN GOLD */}
+                <div className="bg-white p-8 rounded-[4rem] border-t-8 border-brand-500 shadow-sm flex flex-col relative overflow-hidden">
+                   <div className="absolute top-4 right-8 text-brand-500 opacity-10 rotate-12"><Zap size={100}/></div>
+                   <h4 className="text-2xl font-black uppercase text-slate-900 mb-2">GOLD</h4>
+                   <p className="text-[9px] font-black text-brand-600 uppercase mb-8 tracking-widest">Ideal para micro-negocios</p>
+                   <ul className="space-y-4 flex-1">
+                      {[
+                        { icon: MapPin, text: '1 Almacén Central' },
+                        { icon: UserIcon, text: '3 Operadores Máximos' },
+                        // Fix: Using aliased HistoryIcon
+                        { icon: HistoryIcon, text: '5 Días de Auditoría' },
+                        { icon: Monitor, text: '1 Terminal POS' },
+                        { icon: DollarSign, text: 'Mono-divisa (CUP)' }
+                      ].map((item, i) => (
+                        <li key={i} className="flex items-center gap-3 text-[10px] font-bold text-slate-500 uppercase tracking-tight">
+                           <item.icon size={14} className="text-brand-500 shrink-0"/> {item.text}
+                        </li>
+                      ))}
+                   </ul>
+                </div>
+
+                {/* PLAN SAPPHIRE */}
+                <div className="bg-slate-900 p-8 rounded-[4rem] border-t-8 border-brand-400 shadow-2xl flex flex-col relative overflow-hidden scale-105 z-10">
+                   <div className="absolute top-4 right-8 text-brand-400 opacity-10 rotate-12"><Crown size={100}/></div>
+                   <div className="absolute top-8 right-8 bg-brand-500 text-slate-900 px-3 py-1 rounded-full text-[8px] font-black uppercase tracking-widest">RECOMENDADO</div>
+                   <h4 className="text-2xl font-black uppercase text-white mb-2">SAPPHIRE</h4>
+                   <p className="text-[9px] font-black text-brand-400 uppercase mb-8 tracking-widest">Crecimiento y Gestión Avanzada</p>
+                   <ul className="space-y-4 flex-1">
+                      {[
+                        { icon: MapPin, text: '3 Almacenes Multi-sitio' },
+                        { icon: UserIcon, text: '15 Operadores TPV' },
+                        // Fix: Using aliased HistoryIcon
+                        { icon: HistoryIcon, text: '30 Días de Auditoría' },
+                        { icon: Monitor, text: '3 Terminales POS' },
+                        { icon: DollarSign, text: 'Multi-divisa (CUP/USD/EUR)' },
+                        { icon: UserIcon, text: 'Módulo de Fidelización Clientes' },
+                        { icon: Zap, text: 'Marketing y Cupones PRO' }
+                      ].map((item, i) => (
+                        <li key={i} className="flex items-center gap-3 text-[10px] font-bold text-slate-300 uppercase tracking-tight">
+                           <item.icon size={14} className="text-brand-400 shrink-0"/> {item.text}
+                        </li>
+                      ))}
+                   </ul>
+                </div>
+
+                {/* PLAN PLATINUM */}
+                <div className="bg-white p-8 rounded-[4rem] border-t-8 border-slate-900 shadow-sm flex flex-col relative overflow-hidden">
+                   <div className="absolute top-4 right-8 text-slate-900 opacity-5 rotate-12"><Globe size={100}/></div>
+                   <h4 className="text-2xl font-black uppercase text-slate-900 mb-2">PLATINUM</h4>
+                   <p className="text-[9px] font-black text-slate-400 uppercase mb-8 tracking-widest">Control Total Corporativo</p>
+                   <ul className="space-y-4 flex-1">
+                      {[
+                        { icon: Check, text: 'Almacenes Ilimitados' },
+                        { icon: Check, text: 'Operadores Ilimitados' },
+                        { icon: Check, text: 'Historial Auditoría Vitalicio' },
+                        { icon: Check, text: 'Terminales POS Ilimitadas' },
+                        { icon: Check, text: 'Clientes Ilimitados' },
+                        // Fix: Using aliased ImageIcon to avoid conflict with global Image
+                        { icon: ImageIcon, text: 'Branding Personalizado' },
+                        { icon: ShieldCheck, text: 'Soporte Prioritario 24/7' }
+                      ].map((item, i) => (
+                        <li key={i} className="flex items-center gap-3 text-[10px] font-bold text-slate-500 uppercase tracking-tight">
+                           <item.icon size={14} className="text-slate-900 shrink-0"/> {item.text}
+                        </li>
+                      ))}
+                   </ul>
+                </div>
+             </div>
+          </section>
+        </div>
+      )}
+
+      {/* MODAL EDITAR/AÑADIR MÉTODO DE PAGO */}
+      {showMethodModal && editingMethod && (
+        <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-md flex items-center justify-center z-[200] p-4 animate-in fade-in">
+           <div className="bg-white rounded-[3rem] w-full max-w-lg shadow-2xl overflow-hidden animate-in zoom-in">
+              <div className="p-8 bg-slate-900 text-white flex justify-between items-center">
+                 <h2 className="text-2xl font-black uppercase tracking-tighter flex items-center gap-3"><Wallet size={24}/> Canal de Pago</h2>
+                 <button onClick={() => { setShowMethodModal(false); setEditingMethod(null); }} className="p-3 bg-white/10 rounded-2xl"><X size={20}/></button>
+              </div>
+              <div className="p-8 space-y-6">
+                 <div className="space-y-1">
+                    <label className="text-[10px] font-black text-gray-400 uppercase pl-2">Tipo de Canal (Lógica TPV)</label>
+                    <select 
+                        className="w-full bg-gray-50 p-4 rounded-2xl font-black text-xs uppercase outline-none focus:ring-2 focus:ring-brand-500"
+                        value={editingMethod.id}
+                        onChange={e => setEditingMethod({...editingMethod, id: e.target.value as PaymentMethodType})}
+                    >
+                        {['CASH', 'TRANSFER', 'CARD', 'CRYPTO', 'TROPIPAY', 'QVAPAY', 'CREDIT'].map(id => <option key={id} value={id}>{id}</option>)}
+                    </select>
+                 </div>
+                 <div className="space-y-1">
+                    <label className="text-[10px] font-black text-gray-400 uppercase pl-2">Nombre para el Cliente (Etiqueta)</label>
+                    <input className="w-full bg-gray-50 p-4 rounded-2xl font-black text-slate-800 outline-none focus:ring-2 focus:ring-brand-500 uppercase" placeholder="Ej: Efectivo" value={editingMethod.label} onChange={e => setEditingMethod({...editingMethod, label: e.target.value})} />
+                 </div>
+                 
+                 <div className="bg-slate-50 p-6 rounded-3xl border border-slate-100 flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                       <div className="p-2 bg-white rounded-xl shadow-sm text-slate-400"><Printer size={16}/></div>
+                       <div><p className="text-[10px] font-black text-slate-800 uppercase">Mostrar en Ticket</p><p className="text-[8px] font-bold text-slate-400 uppercase">Aparecerá en el comprobante impreso</p></div>
+                    </div>
+                    <button onClick={() => setEditingMethod({...editingMethod, showInTicket: !editingMethod.showInTicket})} className={`w-12 h-6 rounded-full p-1 transition-all ${editingMethod.showInTicket ? 'bg-emerald-500' : 'bg-slate-300'}`}>
+                       <div className={`bg-white w-4 h-4 rounded-full transition-all ${editingMethod.showInTicket ? 'translate-x-6' : 'translate-x-0'}`}></div>
+                    </button>
+                 </div>
+
+                 <button onClick={handleSaveMethod} className="w-full bg-brand-500 text-slate-900 font-black py-5 rounded-3xl shadow-xl hover:bg-brand-400 transition-all uppercase tracking-widest text-xs">Consolidar Canal</button>
+              </div>
+           </div>
         </div>
       )}
 
