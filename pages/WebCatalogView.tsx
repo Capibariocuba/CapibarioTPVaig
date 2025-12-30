@@ -210,6 +210,28 @@ export const WebCatalogView: React.FC = () => {
                 <p className="text-[9px] font-black text-brand-400 uppercase tracking-widest">Catálogo Online</p>
               </div>
            </div>
+
+           {/* OVERLAY DE CÓDIGOS QR PARA PAGOS */}
+           {( (businessConfig.showQrTransfer && businessConfig.qrTransferImageData) || (businessConfig.showQrEnzona && businessConfig.qrEnzonaImageData) ) && (
+             <div className="absolute bottom-8 left-8 z-30 flex flex-col gap-4 animate-in fade-in slide-in-from-left duration-700">
+               {businessConfig.showQrTransfer && businessConfig.qrTransferImageData && (
+                 <div className="bg-black/50 backdrop-blur-md p-3 rounded-3xl border border-white/10 shadow-2xl flex flex-col items-center">
+                   <div className="w-[100px] h-[100px] bg-white rounded-xl p-1 mb-2 overflow-hidden">
+                     <img src={businessConfig.qrTransferImageData} className="w-full h-full object-contain" alt="QR Transfermóvil" />
+                   </div>
+                   <span className="text-[8px] font-black text-white uppercase tracking-widest">PAGO X TRANSFERMÓVIL</span>
+                 </div>
+               )}
+               {businessConfig.showQrEnzona && businessConfig.qrEnzonaImageData && (
+                 <div className="bg-black/50 backdrop-blur-md p-3 rounded-3xl border border-white/10 shadow-2xl flex flex-col items-center">
+                   <div className="w-[100px] h-[100px] bg-white rounded-xl p-1 mb-2 overflow-hidden">
+                     <img src={businessConfig.qrEnzonaImageData} className="w-full h-full object-contain" alt="QR Enzona" />
+                   </div>
+                   <span className="text-[8px] font-black text-white uppercase tracking-widest">PAGO X ENZONA</span>
+                 </div>
+               )}
+             </div>
+           )}
         </div>
 
         {/* Ticker / Cintillo */}

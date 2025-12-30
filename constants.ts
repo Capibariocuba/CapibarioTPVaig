@@ -69,7 +69,11 @@ export const DEFAULT_BUSINESS_CONFIG: BusinessConfig = {
   posTerminals: [],
   peripherals: { printerMode: 'WEB', barcodeScannerMode: 'KEYBOARD' },
   isWebCatalogActive: false,
-  webCatalogPort: 8088
+  webCatalogPort: 8088,
+  showQrTransfer: false,
+  qrTransferImageData: undefined,
+  showQrEnzona: false,
+  qrEnzonaImageData: undefined
 };
 
 export const MOCK_USERS: User[] = [

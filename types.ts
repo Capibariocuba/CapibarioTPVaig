@@ -127,6 +127,11 @@ export interface BusinessConfig {
   digitalCatalogRotationSeconds?: number;
   digitalCatalogTickerBgColor?: string;
   digitalCatalogTickerTextColor?: string;
+  // QR PARA PAGOS EN CATÁLOGO
+  showQrTransfer?: boolean;
+  qrTransferImageData?: string;
+  showQrEnzona?: boolean;
+  qrEnzonaImageData?: string;
 }
 
 export interface User {

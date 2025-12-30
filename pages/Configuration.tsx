@@ -47,6 +47,8 @@ export const Configuration: React.FC = () => {
 
   const logoInputRef = useRef<HTMLInputElement>(null);
   const slideInputRef = useRef<HTMLInputElement>(null);
+  const qrTransferRef = useRef<HTMLInputElement>(null);
+  const qrEnzonaRef = useRef<HTMLInputElement>(null);
 
   const tier = (businessConfig.license?.tier || 'GOLD') as LicenseTier;
 
@@ -92,6 +94,22 @@ export const Configuration: React.FC = () => {
       if (file.size > 524288) { notify("Imagen muy grande (máx 512KB)", "error"); return; }
       const reader = new FileReader();
       reader.onloadend = () => setTempBiz({ ...tempBiz, logo: reader.result as string });
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const handleQrUpload = (e: React.ChangeEvent<HTMLInputElement>, target: 'transfer' | 'enzona') => {
+    const file = e.target.files?.[0];
+    if (file) {
+      if (file.size > 300000) { notify("Imagen muy grande (máx 300KB)", "error"); return; }
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        if (target === 'transfer') {
+          setTempBiz({ ...tempBiz, qrTransferImageData: reader.result as string });
+        } else {
+          setTempBiz({ ...tempBiz, qrEnzonaImageData: reader.result as string });
+        }
+      };
       reader.readAsDataURL(file);
     }
   };
@@ -419,6 +437,62 @@ export const Configuration: React.FC = () => {
                                 <label className="text-[10px] font-black uppercase text-slate-400 pl-2 tracking-widest flex items-center gap-2"><Palette size={12}/> Color Texto</label>
                                 <div className="flex items-center gap-2 bg-white p-2 rounded-2xl border-2 border-gray-100">
                                     <input type="color" className="w-10 h-10 rounded-xl border-none cursor-pointer bg-transparent" value={tempBiz.digitalCatalogTickerTextColor || '#ffffff'} onChange={e => setTempBiz({...tempBiz, digitalCatalogTickerTextColor: e.target.value})} />
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* CONFIGURACIÓN QR PAGOS */}
+                    <div className="bg-slate-50 p-8 rounded-[2.5rem] border border-slate-100 space-y-8 lg:col-span-2">
+                        <h4 className="text-xs font-black uppercase text-slate-700 tracking-widest flex items-center gap-2"><QrCode size={16}/> Configuración de QR para Pagos Online</h4>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                            {/* QR TRANSFERMOVIL */}
+                            <div className="bg-white p-6 rounded-3xl border border-gray-200 space-y-4">
+                                <div className="flex items-center justify-between">
+                                    <label className="text-[10px] font-black uppercase text-slate-500 tracking-widest">QR Transfermóvil</label>
+                                    <button onClick={() => setTempBiz({ ...tempBiz, showQrTransfer: !tempBiz.showQrTransfer })} className={`w-12 h-6 rounded-full p-1 transition-all ${tempBiz.showQrTransfer ? 'bg-emerald-500' : 'bg-slate-300'}`}>
+                                        <div className={`bg-white w-4 h-4 rounded-full transition-all ${tempBiz.showQrTransfer ? 'translate-x-6' : 'translate-x-0'}`}></div>
+                                    </button>
+                                </div>
+                                <div className="flex items-center gap-4">
+                                    <div onClick={() => qrTransferRef.current?.click()} className="w-24 h-24 rounded-2xl border-2 border-dashed border-gray-200 flex items-center justify-center overflow-hidden cursor-pointer hover:border-brand-500 transition-all bg-gray-50 relative group">
+                                        {tempBiz.qrTransferImageData ? (
+                                            <><img src={tempBiz.qrTransferImageData} className="w-full h-full object-contain p-2" /><div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center text-white"><Camera size={16}/></div></>
+                                        ) : (
+                                            <Camera className="text-gray-300" size={24} />
+                                        )}
+                                    </div>
+                                    <div className="flex-1 space-y-2">
+                                        <p className="text-[8px] font-bold text-slate-400 uppercase leading-tight">Suba el QR generado desde la app Transfermóvil.</p>
+                                        <button onClick={() => qrTransferRef.current?.click()} className="text-[9px] font-black text-brand-600 uppercase tracking-widest">Subir Imagen</button>
+                                        <input ref={qrTransferRef} type="file" className="hidden" accept="image/*" onChange={(e) => handleQrUpload(e, 'transfer')} />
+                                        {tempBiz.showQrTransfer && !tempBiz.qrTransferImageData && <p className="text-[8px] font-black text-amber-500 uppercase flex items-center gap-1"><AlertCircle size={10}/> Falta imagen</p>}
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* QR ENZONA */}
+                            <div className="bg-white p-6 rounded-3xl border border-gray-200 space-y-4">
+                                <div className="flex items-center justify-between">
+                                    <label className="text-[10px] font-black uppercase text-slate-500 tracking-widest">QR Enzona</label>
+                                    <button onClick={() => setTempBiz({ ...tempBiz, showQrEnzona: !tempBiz.showQrEnzona })} className={`w-12 h-6 rounded-full p-1 transition-all ${tempBiz.showQrEnzona ? 'bg-emerald-500' : 'bg-slate-300'}`}>
+                                        <div className={`bg-white w-4 h-4 rounded-full transition-all ${tempBiz.showQrEnzona ? 'translate-x-6' : 'translate-x-0'}`}></div>
+                                    </button>
+                                </div>
+                                <div className="flex items-center gap-4">
+                                    <div onClick={() => qrEnzonaRef.current?.click()} className="w-24 h-24 rounded-2xl border-2 border-dashed border-gray-200 flex items-center justify-center overflow-hidden cursor-pointer hover:border-brand-500 transition-all bg-gray-50 relative group">
+                                        {tempBiz.qrEnzonaImageData ? (
+                                            <><img src={tempBiz.qrEnzonaImageData} className="w-full h-full object-contain p-2" /><div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center text-white"><Camera size={16}/></div></>
+                                        ) : (
+                                            <Camera className="text-gray-300" size={24} />
+                                        )}
+                                    </div>
+                                    <div className="flex-1 space-y-2">
+                                        <p className="text-[8px] font-bold text-slate-400 uppercase leading-tight">Suba el QR generado desde el portal Enzona.</p>
+                                        <button onClick={() => qrEnzonaRef.current?.click()} className="text-[9px] font-black text-brand-600 uppercase tracking-widest">Subir Imagen</button>
+                                        <input ref={qrEnzonaRef} type="file" className="hidden" accept="image/*" onChange={(e) => handleQrUpload(e, 'enzona')} />
+                                        {tempBiz.showQrEnzona && !tempBiz.qrEnzonaImageData && <p className="text-[8px] font-black text-amber-500 uppercase flex items-center gap-1"><AlertCircle size={10}/> Falta imagen</p>}
+                                    </div>
                                 </div>
                             </div>
                         </div>
