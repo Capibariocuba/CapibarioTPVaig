@@ -1,11 +1,11 @@
 
 import React, { useMemo, useState, useEffect } from 'react';
 import { useStore } from '../context/StoreContext';
-import { Phone, Sparkles, AlertCircle, UtensilsCrossed, ArrowRight, RefreshCw, Layers } from 'lucide-react';
+import { Sparkles, AlertCircle, UtensilsCrossed, RefreshCw, Layers } from 'lucide-react';
 import { Product } from '../types';
 
 // CONFIGURACIÓN DE PANTALLA DERECHA
-const ITEMS_PER_SCREEN = 10; // Productos por pantalla en la lista horizontal
+const ITEMS_PER_SCREEN = 10; // Exactamente 10 productos por pantalla
 
 export const WebCatalogView: React.FC = () => {
   const { 
@@ -35,25 +35,31 @@ export const WebCatalogView: React.FC = () => {
     return terminal?.warehouseId || warehouses[0]?.id || 'wh-default';
   }, [businessConfig.posTerminals, activePosTerminalId, warehouses]);
 
-  // 3. GENERAR TODAS LAS PANTALLAS (CATEGORÍA -> PÁGINAS)
+  // 3. GENERAR TODAS LAS PANTALLAS (Solo productos con flag "Catálogo")
   const screens = useMemo(() => {
     void refreshTick;
-    const available = products.filter(p => !p.hidden && p.warehouseId === activeWhId);
+    // REGLA 1: Solo productos marcados con la categoría "Catálogo" y con stock > 0 y no ocultos
+    const available = products.filter(p => 
+        p.categories.includes('Catálogo') && 
+        !p.hidden && 
+        p.warehouseId === activeWhId &&
+        ((p.stock || 0) + (p.variants?.reduce((acc, v) => acc + (v.stock || 0), 0) || 0)) > 0
+    );
     
-    // Definir orden de categorías
-    const catNames = categories.map(c => c.name).filter(n => n !== 'Catálogo');
-    const orderedCats = ['Todo', ...catNames, 'Catálogo'];
+    // REGLA 2: Agrupar por su categoría real secundaria (Excluyendo "Catálogo" de la visualización)
+    const validCategoryNames = categories
+        .map(c => c.name)
+        .filter(n => n !== 'Catálogo');
 
     const result: { catName: string; items: Product[] }[] = [];
 
-    orderedCats.forEach(cat => {
-        let catItems = [];
-        if (cat === 'Todo') catItems = available;
-        else catItems = available.filter(p => p.categories.includes(cat));
+    validCategoryNames.forEach(cat => {
+        // Productos que pertenecen a esta categoría real Y tienen el flag Catálogo
+        const catItems = available.filter(p => p.categories.includes(cat));
 
         if (catItems.length === 0) return;
 
-        // Dividir en páginas si exceden ITEMS_PER_SCREEN
+        // Dividir en páginas si exceden 10 productos
         for (let i = 0; i < catItems.length; i += ITEMS_PER_SCREEN) {
             result.push({
                 catName: cat,
@@ -80,7 +86,7 @@ export const WebCatalogView: React.FC = () => {
     if (slides.length <= 1) return;
     const interval = setInterval(() => {
       setCurrentSlideIdx(prev => (prev + 1) % slides.length);
-    }, 6000); // Slide cambia un poco más rápido para dinamismo
+    }, 6000);
     return () => clearInterval(interval);
   }, [businessConfig.digitalCatalogImages]);
 
@@ -104,7 +110,7 @@ export const WebCatalogView: React.FC = () => {
   const slides = businessConfig.digitalCatalogImages || [];
 
   return (
-    <div className="h-screen w-screen bg-slate-950 text-white overflow-hidden flex font-sans select-none">
+    <div className="h-screen w-screen bg-white text-slate-900 overflow-hidden flex font-sans select-none transition-colors duration-500">
       <style>{`
         @keyframes marquee {
           0% { transform: translateX(100%); }
@@ -121,9 +127,9 @@ export const WebCatalogView: React.FC = () => {
       `}</style>
 
       {/* LADO IZQUIERDO: VISUAL (Slideshow + Ticker) */}
-      <div className="w-[45%] h-full flex flex-col border-r border-white/10 bg-black">
+      <div className="w-[45%] h-full flex flex-col border-r border-slate-100 bg-slate-50">
         {/* Slideshow */}
-        <div className="flex-1 relative overflow-hidden bg-slate-900">
+        <div className="flex-1 relative overflow-hidden bg-slate-200">
            {slides.length > 0 ? (
              slides.map((img, idx) => (
                <img 
@@ -134,84 +140,85 @@ export const WebCatalogView: React.FC = () => {
                />
              ))
            ) : (
-             <div className="h-full flex flex-col items-center justify-center text-slate-700 p-20 text-center">
+             <div className="h-full flex flex-col items-center justify-center text-slate-400 p-20 text-center">
                 <Sparkles size={120} className="mb-6 opacity-20" />
-                <h2 className="text-4xl font-black uppercase tracking-tighter">{businessConfig.name}</h2>
-                <p className="text-xs font-bold uppercase tracking-[0.3em] mt-4 opacity-50">Calidad y Servicio</p>
+                <h2 className="text-4xl font-black uppercase tracking-tighter text-slate-300">{businessConfig.name}</h2>
              </div>
            )}
            
-           {/* Overlay Logo/Nombre */}
-           <div className="absolute top-10 left-10 z-20 flex items-center gap-6 bg-black/40 backdrop-blur-xl p-6 rounded-[2.5rem] border border-white/10 shadow-2xl">
-              <div className="w-20 h-20 bg-white rounded-3xl p-3 shadow-xl overflow-hidden flex items-center justify-center">
+           {/* Overlay Logo/Nombre (TEMA BLANCO) */}
+           <div className="absolute top-8 left-8 z-20 flex items-center gap-5 bg-white/90 backdrop-blur-xl p-5 rounded-[2rem] border border-slate-200 shadow-2xl">
+              <div className="w-16 h-16 bg-white rounded-2xl p-2 shadow-sm overflow-hidden flex items-center justify-center border border-slate-100">
                 <img src={businessConfig.logo || ''} className="w-full h-full object-contain" alt="Logo" />
               </div>
               <div>
-                <h1 className="text-3xl font-black uppercase tracking-tighter text-white">{businessConfig.name}</h1>
-                <p className="text-[10px] font-black text-brand-400 uppercase tracking-widest mt-1">Menu Digital Pro</p>
+                <h1 className="text-2xl font-black uppercase tracking-tighter text-slate-900">{businessConfig.name}</h1>
+                <p className="text-[9px] font-black text-brand-500 uppercase tracking-widest">Catálogo Online</p>
               </div>
            </div>
         </div>
 
-        {/* Ticker / Cintillo */}
-        <div className="h-[12vh] bg-brand-600 flex items-center overflow-hidden border-t border-white/20 shadow-[0_-10px_30px_rgba(0,0,0,0.5)]">
-           <div className="animate-marquee font-black text-3xl uppercase tracking-widest text-slate-950">
-              {businessConfig.digitalCatalogTicker || `BIENVENIDOS A ${businessConfig.name.toUpperCase()} • DISFRUTE NUESTROS PRODUCTOS FRESCOS • SERVICIO A DOMICILIO AL ${businessConfig.phone} •`}
+        {/* Ticker / Cintillo (PERSONALIZABLE) */}
+        <div 
+            className="h-[12vh] flex items-center overflow-hidden border-t border-white/20 shadow-[0_-10px_30px_rgba(0,0,0,0.1)] shrink-0"
+            style={{ backgroundColor: businessConfig.digitalCatalogTickerBgColor || '#0ea5e9' }}
+        >
+           <div 
+                className="animate-marquee font-black text-3xl uppercase tracking-widest"
+                style={{ color: businessConfig.digitalCatalogTickerTextColor || '#ffffff' }}
+           >
+              {businessConfig.digitalCatalogTicker || `BIENVENIDOS A ${businessConfig.name.toUpperCase()} • PRODUCTOS DISPONIBLES • PEDIDOS AL ${businessConfig.phone} •`}
               &nbsp;&nbsp;&nbsp;&nbsp;
-              {businessConfig.digitalCatalogTicker || `BIENVENIDOS A ${businessConfig.name.toUpperCase()} • DISFRUTE NUESTROS PRODUCTOS FRESCOS • SERVICIO A DOMICILIO AL ${businessConfig.phone} •`}
+              {businessConfig.digitalCatalogTicker || `BIENVENIDOS A ${businessConfig.name.toUpperCase()} • PRODUCTOS DISPONIBLES • PEDIDOS AL ${businessConfig.phone} •`}
            </div>
         </div>
       </div>
 
-      {/* LADO DERECHO: PRODUCTOS (Lista Horizontal) */}
-      <div className="flex-1 h-full bg-slate-950 p-12 flex flex-col">
-        {/* Header Categoría */}
-        <div className="mb-10 flex justify-between items-end border-b-4 border-brand-500 pb-6">
-           <div>
-              <p className="text-[10px] font-black text-brand-400 uppercase tracking-[0.4em] mb-2">Sección Actual</p>
-              <h2 className="text-6xl font-black uppercase tracking-tighter text-white flex items-center gap-6">
-                <Layers size={48} className="text-brand-500" />
+      {/* LADO DERECHO: PRODUCTOS (TEMA BLANCO + COMPACTO) */}
+      <div className="flex-1 h-full bg-white p-10 flex flex-col">
+        {/* Header Categoría (COMPACTO) */}
+        <div className="mb-6 flex justify-between items-center border-b-2 border-slate-100 pb-4 shrink-0">
+           <div className="flex items-center gap-5">
+              <div className="p-3 bg-slate-900 text-white rounded-2xl shadow-lg">
+                <Layers size={28} />
+              </div>
+              <h2 className="text-4xl font-black uppercase tracking-tighter text-slate-900">
                 {activeScreen?.catName}
               </h2>
            </div>
            <div className="text-right">
-              <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1">Pedidos al</p>
-              <p className="text-3xl font-black text-white tracking-tighter">{businessConfig.phone}</p>
+              <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-0.5">Pedidos</p>
+              <p className="text-2xl font-black text-brand-600 tracking-tighter">{businessConfig.phone}</p>
            </div>
         </div>
 
-        {/* Lista Horizontal de Productos */}
-        <div className="flex-1 flex flex-col justify-start space-y-3">
+        {/* Lista de Productos (FIX 10 FILAS) */}
+        <div className="flex-1 grid grid-rows-[repeat(10,minmax(0,1fr))] gap-2 h-full overflow-hidden">
           {activeScreen?.items.map((item, idx) => (
             <div 
               key={`${item.id}-${idx}`}
-              className="bg-white/5 border border-white/5 p-4 rounded-3xl flex items-center gap-6 hover:bg-white/10 transition-all group animate-in slide-in-from-right duration-500"
-              style={{ animationDelay: `${idx * 100}ms` }}
+              className="bg-white border border-slate-100 p-3 rounded-2xl flex items-center gap-4 hover:border-brand-500/30 transition-all group animate-in slide-in-from-right duration-500 shadow-sm"
+              style={{ animationDelay: `${idx * 50}ms` }}
             >
               {/* Mini Foto */}
-              <div className="w-16 h-16 rounded-2xl bg-slate-800 overflow-hidden shadow-xl shrink-0">
+              <div className="h-full aspect-square rounded-xl bg-slate-50 overflow-hidden shrink-0 border border-slate-50">
                 {item.image ? (
                   <img src={item.image} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700" alt={item.name} />
                 ) : (
-                  <div className="w-full h-full flex items-center justify-center text-slate-700"><UtensilsCrossed size={24} /></div>
+                  <div className="w-full h-full flex items-center justify-center text-slate-200"><UtensilsCrossed size={18} /></div>
                 )}
               </div>
 
               {/* Nombre */}
-              <div className="flex-1">
-                <h3 className="text-xl font-black uppercase tracking-tight text-white group-hover:text-brand-400 transition-colors line-clamp-1">
+              <div className="flex-1 min-w-0">
+                <h3 className="text-lg font-black uppercase tracking-tight text-slate-800 line-clamp-1 group-hover:text-brand-600 transition-colors">
                   {item.name}
                 </h3>
-                <div className="flex gap-2 mt-1">
-                   {item.categories.filter(c => c !== activeScreen.catName).map(c => (
-                     <span key={c} className="text-[7px] font-black text-slate-500 uppercase tracking-widest">{c}</span>
-                   ))}
-                </div>
               </div>
 
-              {/* Precio */}
+              {/* Precio (SIEMPRE VISIBLE) */}
               <div className="text-right shrink-0">
-                <div className="text-2xl font-black text-white tracking-tighter bg-slate-900 px-6 py-3 rounded-2xl border border-white/10 group-hover:border-brand-500/30 group-hover:bg-brand-500 group-hover:text-slate-950 transition-all">
+                <div className="text-xl font-black text-slate-900 tracking-tighter bg-slate-50 px-4 py-2 rounded-xl border border-slate-100 group-hover:border-brand-500 group-hover:bg-brand-500 group-hover:text-white transition-all">
                   {currencySymbol}{item.price.toLocaleString()}
                 </div>
               </div>
@@ -219,25 +226,25 @@ export const WebCatalogView: React.FC = () => {
           ))}
 
           {(!activeScreen || activeScreen.items.length === 0) && (
-            <div className="h-full flex items-center justify-center text-slate-700 italic uppercase font-black text-xs tracking-widest">
-               No hay productos para mostrar en esta sección
+            <div className="h-full flex items-center justify-center text-slate-300 italic uppercase font-black text-xs tracking-widest border-4 border-dashed border-slate-50 rounded-[3rem]">
+               Configure productos con la categoría "Catálogo" para mostrarlos aquí.
             </div>
           )}
         </div>
 
-        {/* Footer Indicadores de Pantalla */}
-        <div className="mt-8 flex justify-between items-center bg-white/5 p-6 rounded-[2rem]">
-           <div className="flex gap-3">
+        {/* Footer Indicadores (TEMA BLANCO) */}
+        <div className="mt-6 flex justify-between items-center bg-slate-50 p-5 rounded-[1.5rem] shrink-0">
+           <div className="flex gap-2">
               {screens.map((_, idx) => (
                 <div 
                   key={idx} 
-                  className={`h-2 rounded-full transition-all duration-700 ${idx === currentScreenIdx ? 'w-16 bg-brand-500 shadow-[0_0_20px_rgba(14,165,233,0.6)]' : 'w-4 bg-slate-800'}`}
+                  className={`h-1.5 rounded-full transition-all duration-700 ${idx === currentScreenIdx ? 'w-12 bg-slate-900 shadow-sm' : 'w-3 bg-slate-200'}`}
                 />
               ))}
            </div>
-           <div className="flex items-center gap-4">
-              <RefreshCw size={14} className="animate-spin text-brand-500" />
-              <span className="text-[9px] font-black uppercase text-slate-500 tracking-[0.2em]">Actualizado hace instantes</span>
+           <div className="flex items-center gap-3">
+              <RefreshCw size={12} className="animate-spin text-slate-400" />
+              <span className="text-[9px] font-black uppercase text-slate-400 tracking-[0.2em]">Sincronizado</span>
            </div>
         </div>
       </div>

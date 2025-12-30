@@ -120,6 +120,8 @@ export interface BusinessConfig {
   digitalCatalogImages?: string[];
   digitalCatalogTicker?: string;
   digitalCatalogRotationSeconds?: number;
+  digitalCatalogTickerBgColor?: string;
+  digitalCatalogTickerTextColor?: string;
 }
 
 export interface User {

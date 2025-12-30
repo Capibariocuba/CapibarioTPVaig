@@ -6,7 +6,7 @@ import {
   Lock, Building2, User as UserIcon, DollarSign, ShieldCheck, 
   Save, Plus, Trash2, Key, Crown, Printer, Barcode, CreditCard, 
   Phone, Mail, MapPin, Hash, Receipt, AlertCircle, Banknote, Globe, Wallet, Camera, Monitor, LogIn, LogOut, CheckSquare, Square, X,
-  ArrowRight, Sparkles, Cloud, Zap, ExternalLink, Copy, Info, QrCode, Image as ImageIcon, Timer
+  ArrowRight, Sparkles, Cloud, Zap, ExternalLink, Copy, Info, QrCode, Image as ImageIcon, Timer, Palette
 } from 'lucide-react';
 
 export const Configuration: React.FC = () => {
@@ -296,6 +296,25 @@ export const Configuration: React.FC = () => {
                             <label className="text-[10px] font-black uppercase text-slate-400 pl-2 tracking-widest flex items-center gap-2"><Info size={12}/> Texto del Cintillo (Ticker)</label>
                             <input className="w-full bg-white border-2 border-gray-100 p-4 rounded-2xl font-bold outline-none focus:border-brand-500" placeholder="Ej: ¡Bienvenidos! Tenemos ofertas en Bebidas todo el fin de semana..." value={tempBiz.digitalCatalogTicker || ''} onChange={e => setTempBiz({...tempBiz, digitalCatalogTicker: e.target.value})} />
                         </div>
+                        
+                        {/* COLORES DEL CINTILLO */}
+                        <div className="grid grid-cols-2 gap-4">
+                            <div className="space-y-1">
+                                <label className="text-[10px] font-black uppercase text-slate-400 pl-2 tracking-widest flex items-center gap-2"><Palette size={12}/> Color Barra</label>
+                                <div className="flex items-center gap-2 bg-white p-2 rounded-2xl border-2 border-gray-100">
+                                    <input type="color" className="w-10 h-10 rounded-xl border-none cursor-pointer bg-transparent" value={tempBiz.digitalCatalogTickerBgColor || '#0ea5e9'} onChange={e => setTempBiz({...tempBiz, digitalCatalogTickerBgColor: e.target.value})} />
+                                    <span className="text-[10px] font-bold text-slate-500 uppercase">{tempBiz.digitalCatalogTickerBgColor || '#0ea5e9'}</span>
+                                </div>
+                            </div>
+                            <div className="space-y-1">
+                                <label className="text-[10px] font-black uppercase text-slate-400 pl-2 tracking-widest flex items-center gap-2"><Palette size={12}/> Color Texto</label>
+                                <div className="flex items-center gap-2 bg-white p-2 rounded-2xl border-2 border-gray-100">
+                                    <input type="color" className="w-10 h-10 rounded-xl border-none cursor-pointer bg-transparent" value={tempBiz.digitalCatalogTickerTextColor || '#ffffff'} onChange={e => setTempBiz({...tempBiz, digitalCatalogTickerTextColor: e.target.value})} />
+                                    <span className="text-[10px] font-bold text-slate-500 uppercase">{tempBiz.digitalCatalogTickerTextColor || '#ffffff'}</span>
+                                </div>
+                            </div>
+                        </div>
+
                         <div className="space-y-1">
                             <label className="text-[10px] font-black uppercase text-slate-400 pl-2 tracking-widest flex items-center gap-2"><Timer size={12}/> Segundos de Rotación</label>
                             <input type="number" className="w-full bg-white border-2 border-gray-100 p-4 rounded-2xl font-black outline-none focus:border-brand-500" value={tempBiz.digitalCatalogRotationSeconds || 10} onChange={e => setTempBiz({...tempBiz, digitalCatalogRotationSeconds: parseInt(e.target.value) || 10})} />
