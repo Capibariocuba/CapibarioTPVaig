@@ -1,285 +1,211 @@
 
-import React, { useMemo, useState, useEffect, useCallback } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import { useStore } from '../context/StoreContext';
-import { Package, Phone, MapPin, Sparkles, AlertCircle, ShoppingBag, Zap, Tag, Clock, UtensilsCrossed } from 'lucide-react';
-import { Product } from '../types';
+import { Phone, ShoppingBag, Sparkles, AlertCircle, UtensilsCrossed, ArrowRight } from 'lucide-react';
 
-// CONFIGURACIÓN DE ROTACIÓN
-const SLIDE_DURATION = 8000; // 8 segundos por página
-const ITEMS_PER_PAGE_TV = 48; // 12 columnas x 4 filas aprox.
+// Configuración de visualización
+const DESKTOP_COLS = 6;
+const DESKTOP_ROWS = 5;
+const ITEMS_PER_PAGE = DESKTOP_COLS * DESKTOP_ROWS; // 30 productos
+const ROTATION_INTERVAL = 7000; // 7 segundos
 
 export const WebCatalogView: React.FC = () => {
   const { products, businessConfig, categories } = useStore();
-  const [isTvMode, setIsTvMode] = useState(() => window.location.hash.includes('/tv'));
   
-  // ESTADOS DE ROTACIÓN
-  const [currentSlideIndex, setCurrentSlideIndex] = useState(0);
-  const [isTransitioning, setIsTransitioning] = useState(false);
+  const [currentPage, setCurrentPage] = useState(0);
+  const [isFlipping, setIsFlipping] = useState(false);
 
-  useEffect(() => {
-    const handleHash = () => setIsTvMode(window.location.hash.includes('/tv'));
-    window.addEventListener('hashchange', handleHash);
-    return () => window.removeEventListener('hashchange', handleHash);
-  }, []);
-
-  // 1. PREPARACIÓN DE DATOS: Aplanado y Filtrado
-  const catalogItems = useMemo(() => {
+  // 1. Preparar y ordenar productos por categoría
+  const sortedItems = useMemo(() => {
     return products
       .filter(p => !p.hidden && p.categories.includes('Catálogo'))
+      .sort((a, b) => {
+        const catA = a.categories.find(c => c !== 'Catálogo') || '';
+        const catB = b.categories.find(c => c !== 'Catálogo') || '';
+        return catA.localeCompare(catB);
+      })
       .flatMap(p => {
-        const catLabel = p.categories.find(c => c !== 'Catálogo') || 'General';
+        // Incluimos el producto base
         const base = {
           id: p.id,
-          displayName: p.name,
-          displayImage: p.image,
-          displayPrice: p.price,
-          displayStock: p.stock,
-          categoryName: catLabel,
-          isVariant: false
+          name: p.name,
+          price: p.price,
+          image: p.image,
+          category: p.categories.find(c => c !== 'Catálogo') || 'General'
         };
-        const variantItems = (p.variants || []).map(v => ({
-          id: v.id,
-          displayName: `${p.name} - ${v.name}`,
-          displayImage: v.image || p.image,
-          displayPrice: v.price,
-          displayStock: v.stock,
-          categoryName: catLabel,
-          isVariant: true
-        }));
-        return [base, ...variantItems];
+        // Opcional: Podrías incluir variantes aquí si fuera necesario
+        return [base];
       });
   }, [products]);
 
-  // 2. LÓGICA DE CHUNKING (Paginación por Categoría)
-  const slides = useMemo(() => {
-    const grouped: { cat: string; items: any[] }[] = [];
-    
-    // Agrupar por categoría
-    categories.filter(c => c.name !== 'Catálogo').forEach(cat => {
-      const items = catalogItems.filter(i => i.categoryName === cat.name);
-      if (items.length > 0) {
-        // Dividir los ítems de la categoría en páginas de N
-        for (let i = 0; i < items.length; i += ITEMS_PER_PAGE_TV) {
-          grouped.push({
-            cat: cat.name,
-            items: items.slice(i, i + ITEMS_PER_PAGE_TV)
-          });
-        }
-      }
-    });
+  // 2. Dividir en páginas de 30 items
+  const pages = useMemo(() => {
+    const p = [];
+    for (let i = 0; i < sortedItems.length; i += ITEMS_PER_PAGE) {
+      p.push(sortedItems.slice(i, i + ITEMS_PER_PAGE));
+    }
+    return p;
+  }, [sortedItems]);
 
-    return grouped;
-  }, [catalogItems, categories]);
-
-  // 3. HOOK DE ROTACIÓN AUTOMÁTICA
+  // 3. Lógica de rotación con animación 3D
   useEffect(() => {
-    if (!isTvMode || slides.length <= 1) return;
+    if (pages.length <= 1) return;
 
     const interval = setInterval(() => {
-      setIsTransitioning(true);
+      setIsFlipping(true);
       setTimeout(() => {
-        setCurrentSlideIndex(prev => (prev + 1) % slides.length);
-        setIsTransitioning(false);
-      }, 500); // Duración de la animación de salida
-    }, SLIDE_DURATION);
+        setCurrentPage(prev => (prev + 1) % pages.length);
+        setIsFlipping(false);
+      }, 600); // Mitad de la animación para el cambio de datos
+    }, ROTATION_INTERVAL);
 
     return () => clearInterval(interval);
-  }, [isTvMode, slides.length]);
+  }, [pages.length]);
 
   if (!businessConfig.isWebCatalogActive) {
     return (
-      <div className="h-screen bg-white flex flex-col items-center justify-center p-8 text-center animate-in fade-in">
-        <div className="bg-red-50 p-8 rounded-[3rem] mb-6">
+      <div className="h-screen bg-slate-950 flex flex-col items-center justify-center p-8 text-center animate-in fade-in">
+        <div className="bg-red-500/10 p-8 rounded-[3rem] mb-6 border border-red-500/20">
            <AlertCircle size={64} className="text-red-500 mx-auto" />
         </div>
-        <h1 className="text-3xl font-black text-slate-900 uppercase tracking-tighter mb-2">Catálogo Offline</h1>
-        <p className="text-slate-400 font-bold uppercase tracking-widest text-xs">El servidor local ha sido pausado por el administrador.</p>
+        <h1 className="text-3xl font-black text-white uppercase tracking-tighter mb-2">Catálogo en Mantenimiento</h1>
+        <p className="text-slate-400 font-bold uppercase tracking-widest text-xs">Vuelva a consultar pronto.</p>
       </div>
     );
   }
 
-  // --- RENDER MODO TV (HIGH DENSITY / NO SCROLL) ---
-  if (isTvMode) {
-    const currentSlide = slides[currentSlideIndex] || { cat: 'Menú', items: [] };
+  const currentPageItems = pages[currentPage] || [];
 
-    return (
-      <div className="h-screen w-screen bg-black text-white overflow-hidden flex flex-col font-sans select-none">
-        {/* BARRA DE PROGRESO SUPERIOR */}
-        <div className="h-1.5 w-full bg-slate-900 absolute top-0 left-0 z-50">
-           <div 
-            key={currentSlideIndex}
-            className="h-full bg-brand-500 animate-fill-progress"
-            style={{ animationDuration: `${SLIDE_DURATION}ms` }}
-           />
-        </div>
-
-        <style>{`
-          @keyframes fill-progress {
-            from { width: 0%; }
-            to { width: 100%; }
-          }
-          .animate-fill-progress {
-            animation-name: fill-progress;
-            animation-timing-function: linear;
-          }
-        `}</style>
-
-        {/* TV HEADER - COMPACTO PERO INFORMATIVO */}
-        <header className="h-[10vh] border-b border-white/5 flex items-center justify-between px-8 bg-slate-950 shrink-0">
-           <div className="flex items-center gap-5">
-              <div className="w-14 h-14 rounded-2xl bg-white p-1.5 shadow-2xl shadow-brand-500/20">
-                 <img src={businessConfig.logo || ''} className="w-full h-full object-contain" alt="Logo" />
-              </div>
-              <div>
-                 <h1 className="text-2xl font-black uppercase tracking-tighter leading-none text-white">{businessConfig.name}</h1>
-                 <p className="text-brand-400 font-black uppercase tracking-[0.2em] text-[9px] mt-1 flex items-center gap-2">
-                    <Sparkles size={10}/> Digital Signage Pro
-                 </p>
-              </div>
-           </div>
-
-           {/* CATEGORÍA ACTUAL - ENORME PARA ORIENTACIÓN */}
-           <div className="flex flex-col items-center">
-              <div className="px-10 py-3 bg-brand-600 rounded-full border border-white/20 shadow-[0_0_30px_rgba(14,165,233,0.3)]">
-                 <span className="text-2xl font-black uppercase tracking-widest">{currentSlide.cat}</span>
-              </div>
-              <div className="flex gap-1 mt-2">
-                 {slides.map((_, idx) => (
-                   <div key={idx} className={`h-1 rounded-full transition-all ${idx === currentSlideIndex ? 'w-6 bg-brand-500' : 'w-2 bg-slate-800'}`} />
-                 ))}
-              </div>
-           </div>
-
-           {/* INFO CONTACTO / DELIVERY */}
-           <div className="flex items-center gap-6">
-              <div className="text-right border-r border-white/10 pr-6">
-                 <p className="text-[8px] font-black text-brand-400 uppercase tracking-widest mb-1">Servicio a Domicilio</p>
-                 <div className="flex items-center gap-2 text-xl font-black text-white">
-                    <Phone size={18} className="text-brand-500" />
-                    <span className="tracking-tighter">{businessConfig.phone}</span>
-                 </div>
-              </div>
-              <div className="hidden xl:block">
-                 <p className="text-[8px] font-black text-slate-500 uppercase tracking-widest mb-1">Ubicación</p>
-                 <p className="text-[10px] font-bold text-slate-300 uppercase truncate max-w-[200px]">{businessConfig.address}</p>
-              </div>
-           </div>
-        </header>
-
-        {/* CUERPO DEL MENÚ - GRID DE ALTA DENSIDAD */}
-        <main className={`flex-1 p-4 transition-all duration-500 ${isTransitioning ? 'opacity-0 scale-95 blur-sm' : 'opacity-100 scale-100 blur-0'}`}>
-           <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 xl:grid-cols-10 2xl:grid-cols-12 gap-3 h-full content-start">
-              {currentSlide.items.map((item, idx) => (
-                <div 
-                  key={`${item.id}-${idx}`} 
-                  className={`bg-slate-900/40 border border-white/5 rounded-2xl p-2 flex flex-col h-auto animate-in fade-in zoom-in duration-300 delay-[${idx * 20}ms] hover:border-brand-500/50 transition-colors ${item.displayStock <= 0 ? 'grayscale opacity-30' : ''}`}
-                >
-                   {/* IMAGEN PEQUEÑA O ICONO */}
-                   <div className="aspect-square w-full rounded-xl overflow-hidden bg-slate-800 mb-2 relative group">
-                      {item.displayImage ? (
-                        <img src={item.displayImage} className="w-full h-full object-cover" alt={item.displayName} />
-                      ) : (
-                        <div className="w-full h-full flex items-center justify-center text-slate-700">
-                           <UtensilsCrossed size={24} className="opacity-20" />
-                        </div>
-                      )}
-                      
-                      {/* PRECIO OVERLAY PEQUEÑO */}
-                      <div className="absolute bottom-1 right-1">
-                        <div className="bg-brand-600 px-2 py-0.5 rounded-lg shadow-xl border border-white/10">
-                           <span className="text-xs font-black text-white tracking-tighter">${item.displayPrice.toFixed(0)}</span>
-                        </div>
-                      </div>
-                   </div>
-
-                   {/* INFO PRODUCTO */}
-                   <div className="flex flex-col justify-between flex-1">
-                      <h3 className="text-[9px] font-black uppercase tracking-tighter leading-none line-clamp-2 text-slate-200">
-                         {item.displayName}
-                      </h3>
-                      {item.isVariant && (
-                        <span className="text-[7px] font-bold text-brand-400/80 uppercase mt-1">Variante</span>
-                      )}
-                   </div>
-                </div>
-              ))}
-              
-              {/* PLACEHOLDERS PARA MANTENER ESTRUCTURA SI HAY POCOS ITEMS */}
-              {currentSlide.items.length < 30 && Array.from({ length: 12 }).map((_, i) => (
-                <div key={`ph-${i}`} className="border border-white/5 bg-white/2 rounded-2xl opacity-10 flex items-center justify-center">
-                   <Package size={20} />
-                </div>
-              ))}
-           </div>
-        </main>
-
-        {/* MARQUESINA INFERIOR */}
-        <footer className="h-[4vh] bg-brand-600 flex items-center overflow-hidden shrink-0 border-t border-white/10">
-           <div className="flex whitespace-nowrap animate-marquee">
-              {[1, 2, 3].map(i => (
-                <span key={i} className="text-[10px] font-black uppercase tracking-[0.4em] text-slate-950 px-10">
-                   {businessConfig.footerMessage} • PRECIOS SUJETOS A CAMBIOS SIN PREVIO AVISO • CALIDAD GARANTIZADA • ABIERTO HASTA LAS 10:00 PM • GRACIAS POR PREFERIRNOS
-                </span>
-              ))}
-           </div>
-        </footer>
-
-        <style>{`
-          @keyframes marquee {
-            0% { transform: translateX(0); }
-            100% { transform: translateX(-33.33%); }
-          }
-          .animate-marquee {
-            animation: marquee 30s linear infinite;
-          }
-        `}</style>
-      </div>
-    );
-  }
-
-  // --- RENDER MODO MÓVIL (BÁSICO) ---
   return (
-    <div className="min-h-screen bg-slate-50 font-sans pb-20">
-      <header className="bg-white border-b border-gray-200 sticky top-0 z-50 px-6 py-4 flex justify-between items-center">
-        <div className="flex items-center gap-4">
-          <div className="w-12 h-12 rounded-2xl bg-slate-900 overflow-hidden shadow-lg flex items-center justify-center p-1.5 shrink-0">
-            {businessConfig.logo ? <img src={businessConfig.logo} className="w-full h-full object-contain" alt="Logo" /> : <ShoppingBag size={24} className="text-white" />}
+    <div className="h-screen w-screen bg-slate-950 text-white overflow-hidden flex flex-col font-sans select-none">
+      <style>{`
+        .perspective-container {
+          perspective: 2000px;
+        }
+        .flip-card {
+          transition: transform 1.2s cubic-bezier(0.4, 0, 0.2, 1);
+          transform-style: preserve-3d;
+        }
+        .flipping {
+          transform: rotateX(-180deg);
+        }
+        @keyframes glow {
+          0%, 100% { opacity: 0.5; }
+          50% { opacity: 1; }
+        }
+        .animate-glow {
+          animation: glow 3s ease-in-out infinite;
+        }
+      `}</style>
+
+      {/* HEADER MODERNO */}
+      <header className="h-[12vh] bg-slate-900/50 backdrop-blur-xl border-b border-white/5 flex items-center justify-between px-8 shrink-0 z-50">
+        <div className="flex items-center gap-6">
+          <div className="w-16 h-16 rounded-2xl bg-white p-2 shadow-2xl shadow-brand-500/20">
+            <img src={businessConfig.logo || ''} className="w-full h-full object-contain" alt="Logo" />
           </div>
           <div>
-            <h1 className="text-xl font-black text-slate-900 uppercase tracking-tighter leading-tight">{businessConfig.name}</h1>
-            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest"><Phone size={10} className="inline mr-1"/> {businessConfig.phone}</p>
+            <h1 className="text-2xl md:text-3xl font-black uppercase tracking-tighter leading-none text-white">
+              {businessConfig.name}
+            </h1>
+            <p className="text-brand-400 font-black uppercase tracking-[0.2em] text-[10px] mt-1 flex items-center gap-2">
+              <Sparkles size={12} className="animate-pulse" /> Menú Digital Pro
+            </p>
           </div>
+        </div>
+
+        <div className="flex items-center gap-4">
+          <div className="hidden md:flex flex-col items-end mr-4">
+            <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Ubicación</span>
+            <span className="text-xs font-bold text-slate-300 uppercase">{businessConfig.address}</span>
+          </div>
+          <a 
+            href={`tel:${businessConfig.phone}`}
+            className="bg-emerald-500 hover:bg-emerald-400 text-slate-950 px-6 py-4 rounded-2xl flex items-center gap-3 transition-all shadow-lg shadow-emerald-500/20 group"
+          >
+            <div className="flex flex-col items-end">
+              <span className="text-[8px] font-black uppercase leading-none opacity-70">Delivery</span>
+              <span className="text-sm font-black tracking-tighter leading-none">{businessConfig.phone}</span>
+            </div>
+            <Phone size={24} className="group-hover:rotate-12 transition-transform" />
+          </a>
         </div>
       </header>
 
-      <main className="max-w-7xl mx-auto px-6 mt-12 space-y-16">
-          {categories.filter(c => c.name !== 'Catálogo').map(cat => {
-            const catItems = catalogItems.filter(i => i.categoryName === cat.name);
-            if (catItems.length === 0) return null;
-            return (
-              <section key={cat.id}>
-                <h2 className="text-3xl font-black text-slate-900 uppercase tracking-tighter mb-8 pl-4 border-l-8 border-brand-500">{cat.name}</h2>
-                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
-                  {catItems.map(item => (
-                    <div key={item.id} className={`bg-white rounded-[2rem] overflow-hidden shadow-sm border border-gray-100 flex flex-col ${item.displayStock <= 0 ? 'grayscale opacity-50' : ''}`}>
-                      <div className="aspect-square bg-gray-100 relative">
-                        {item.displayImage ? <img src={item.displayImage} className="w-full h-full object-cover" /> : <div className="w-full h-full flex items-center justify-center text-slate-200"><Package size={48}/></div>}
-                        <div className="absolute bottom-3 left-3 right-3">
-                           <div className="bg-white/95 backdrop-blur-md px-4 py-2 rounded-xl shadow-xl flex justify-between items-center border border-white/50">
-                              <span className="text-lg font-black text-brand-600">${item.displayPrice.toFixed(2)}</span>
-                           </div>
-                        </div>
-                      </div>
-                      <div className="p-4 flex-1 flex flex-col justify-center">
-                        <h3 className="font-black text-slate-800 uppercase tracking-tighter text-sm leading-tight line-clamp-2">{item.displayName}</h3>
-                      </div>
-                    </div>
-                  ))}
+      {/* GRID DE PRODUCTOS CON ANIMACIÓN 3D */}
+      <main className="flex-1 p-4 perspective-container overflow-hidden bg-[radial-gradient(circle_at_center,_var(--tw-gradient-stops))] from-slate-900 via-slate-950 to-black">
+        <div className={`h-full w-full flip-card ${isFlipping ? 'flipping' : ''}`}>
+          <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3 h-full content-start">
+            {currentPageItems.map((item, idx) => (
+              <div 
+                key={`${item.id}-${idx}`}
+                className="bg-slate-900/40 border border-white/5 rounded-2xl p-3 flex flex-col h-full hover:border-brand-500/30 transition-colors group relative overflow-hidden"
+              >
+                {/* CATEGORY BADGE */}
+                <div className="absolute top-2 left-2 z-10">
+                  <span className="bg-slate-800/80 backdrop-blur-md text-[7px] font-black uppercase px-2 py-0.5 rounded-full text-brand-400 border border-white/5">
+                    {item.category}
+                  </span>
                 </div>
-              </section>
-            );
-          })}
+
+                {/* IMAGEN OPTIMIZADA */}
+                <div className="aspect-[4/3] w-full rounded-xl overflow-hidden bg-slate-800 mb-3 shrink-0">
+                  {item.image ? (
+                    <img src={item.image} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700" alt={item.name} />
+                  ) : (
+                    <div className="w-full h-full flex items-center justify-center text-slate-700">
+                      <UtensilsCrossed size={32} className="opacity-20" />
+                    </div>
+                  )}
+                </div>
+
+                {/* CONTENIDO PRIORITARIO */}
+                <div className="flex flex-col justify-between flex-1 min-h-0">
+                  <h3 className="text-xs md:text-sm font-black uppercase tracking-tight leading-tight line-clamp-2 text-white group-hover:text-brand-400 transition-colors">
+                    {item.name}
+                  </h3>
+                  
+                  <div className="mt-2 flex items-end justify-between">
+                    <div className="flex flex-col">
+                      <span className="text-[8px] font-black text-slate-500 uppercase leading-none">Precio</span>
+                      <span className="text-xl font-black text-brand-500 tracking-tighter">
+                        ${item.price.toFixed(0)}
+                      </span>
+                    </div>
+                    <div className="bg-brand-500/10 p-1.5 rounded-lg border border-brand-500/20 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <ArrowRight size={14} className="text-brand-400" />
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ))}
+
+            {/* PLACEHOLDERS PARA MANTENER ESTRUCTURA 6X5 */}
+            {currentPageItems.length < ITEMS_PER_PAGE && Array.from({ length: ITEMS_PER_PAGE - currentPageItems.length }).map((_, i) => (
+              <div key={`empty-${i}`} className="border border-white/[0.02] bg-white/[0.01] rounded-2xl hidden lg:block" />
+            ))}
+          </div>
+        </div>
       </main>
+
+      {/* FOOTER / INDICADORES */}
+      <footer className="h-[6vh] bg-slate-900/80 backdrop-blur-md border-t border-white/5 flex items-center justify-between px-8 shrink-0">
+        <div className="flex gap-2">
+          {pages.map((_, idx) => (
+            <div 
+              key={idx} 
+              className={`h-1.5 rounded-full transition-all duration-500 ${idx === currentPage ? 'w-12 bg-brand-500 shadow-[0_0_10px_rgba(14,165,233,0.5)]' : 'w-3 bg-slate-700'}`}
+            />
+          ))}
+        </div>
+        
+        <div className="flex items-center gap-3">
+          <div className="animate-glow h-2 w-2 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.8)]"></div>
+          <span className="text-[9px] font-black uppercase tracking-widest text-slate-400">
+            Actualizado en tiempo real • {businessConfig.footerMessage}
+          </span>
+        </div>
+      </footer>
     </div>
   );
 };
