@@ -233,7 +233,7 @@ export const WebCatalogView: React.FC = () => {
     >
       {!audioEnabled && (
           <div className="absolute top-4 right-4 z-[100] bg-brand-500 text-white px-4 py-2 rounded-full text-[8px] font-black uppercase tracking-widest flex items-center gap-2 shadow-xl animate-bounce">
-              {/* Fix: Corrected syntax error size(12} to size={12} which was causing boolean vs number type mismatch */}
+              {/* Fix: Corrected syntax error size(12} to size={12} */}
               <Bell size={12}/> Toca la pantalla para activar sonido
           </div>
       )}

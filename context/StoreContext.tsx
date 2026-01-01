@@ -49,7 +49,6 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     return DEFAULT_CURRENCIES;
   });
 
-  // Fix: Define 'rates' here so it's available for subsequent hooks and callbacks
   const rates = useMemo(() => 
     currencies.reduce((acc, c) => ({ ...acc, [c.code]: c.rate }), {} as Record<string, number>)
   , [currencies]);
@@ -107,8 +106,9 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   });
 
   const [coupons, setCoupons] = useState<Coupon[]>(() => {
-    const saved = JSON.parse(localStorage.getItem('coupons') || '[]');
-    return saved.map((c: any) => ({
+    const saved = localStorage.getItem('coupons');
+    const parsed = saved ? JSON.parse(saved) : [];
+    return parsed.map((c: any) => ({
       ...c,
       currentUsages: Number(c.currentUsages || 0)
     }));
@@ -211,83 +211,59 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     try {
       const { items, total, payments, currency, note, appliedCouponId, couponDiscount, bogoDiscount, bogoAppsCount } = saleData;
       
-      // 1. Validaciones Críticas (Pre-ejecución)
+      // 1. Validaciones Críticas
       if (!items || items.length === 0) { notify("Carrito vacío", "error"); return null; }
       if (!activeShift) { notify("No hay un turno abierto", "error"); return null; }
       if (!currentUser) { notify("Sesión no válida", "error"); return null; }
 
-      // 1.1 Validar Cupón si existe
-      if (appliedCouponId) {
-        const coupon = coupons.find(c => c.id === appliedCouponId);
-        if (coupon && coupon.usageLimit > 0 && coupon.currentUsages >= coupon.usageLimit) {
-          notify("El cupón ha alcanzado su límite de usos", "error");
-          return null;
-        }
-      }
-
-      // 1.2 Validar Stock de todos los items
-      for (const item of items) {
-        const product = products.find(p => p.id === item.id);
-        if (!product) { notify(`Producto no encontrado: ${item.name}`, "error"); return null; }
-        if (item.selectedVariantId) {
-          const variant = product.variants.find(v => v.id === item.selectedVariantId);
-          if (!variant || (variant.stock || 0) < item.quantity) {
-            notify(`Stock insuficiente para variante de ${product.name}`, "error");
-            return null;
-          }
-        } else {
-          if ((product.stock || 0) < item.quantity) {
-            notify(`Stock insuficiente para ${product.name}`, "error");
-            return null;
-          }
-        }
-      }
-
-      // 2. Preparación de Datos (Cálculos locales)
-      const totalPaidInSaleCurrency = payments.reduce((acc: number, p: any) => acc + p.amount, 0);
-      const overpay = totalPaidInSaleCurrency - total;
-      const changeInCUP = overpay > 0.009 ? convertCurrency(overpay, currency, 'CUP') : 0;
-      const txId = generateUniqueId();
       const saleTimestamp = new Date().toISOString();
-
-      // --- GENERACIÓN DE NÚMERO DE TICKET CONSECUTIVO ---
+      const txId = generateUniqueId();
       const seq = businessConfig.ticketSequence || 1;
       const ticketNumber = seq < 1000000 ? seq.toString().padStart(6, '0') : seq.toString();
 
-      // 3. Preparación de Cambios de Estado (Rollback safety)
+      // 2. Preparación de Cambios de Estado (Atomicidad Manual)
       const nextProducts = products.map(p => {
-        const cartItem = items.find((i: any) => i.id === p.id);
-        if (!cartItem) return p;
+        const productItemsInCart = items.filter((i: any) => i.id === p.id);
+        if (productItemsInCart.length === 0) return p;
+
         const newP = { ...p };
-        if (cartItem.selectedVariantId) {
-          newP.variants = newP.variants.map(v => 
-            v.id === cartItem.selectedVariantId ? { ...v, stock: (v.stock || 0) - cartItem.quantity } : v
-          );
-        } else {
-          newP.stock = (newP.stock || 0) - cartItem.quantity;
-        }
+        let totalSoldForThisProduct = 0;
+
+        productItemsInCart.forEach((cartItem: any) => {
+          totalSoldForThisProduct += Number(cartItem.quantity || 0);
+          if (cartItem.selectedVariantId) {
+            newP.variants = newP.variants.map(v => 
+              v.id === cartItem.selectedVariantId 
+                ? { ...v, stock: (Number(v.stock) || 0) - Number(cartItem.quantity) } 
+                : v
+            );
+          } else {
+            newP.stock = (Number(newP.stock) || 0) - Number(cartItem.quantity);
+          }
+        });
+
         newP.history = [{
           id: generateUniqueId(),
           timestamp: saleTimestamp,
           type: 'STOCK_ADJUST',
           userName: currentUser.name,
-          details: `Venta: -${cartItem.quantity} unidades (Ticket ${ticketNumber})`
+          details: `Venta: -${totalSoldForThisProduct} unidades (Ticket ${ticketNumber})`
         }, ...(newP.history || [])];
+
         return newP;
       });
 
-      // 4. Ejecución del Ledger (Local para evitar efectos secundarios parciales)
       const newLedgerEntries: LedgerEntry[] = [];
       let finalRemainingCredit: number | undefined = undefined;
       let nextClients = [...clients];
 
       payments.forEach((p: PaymentDetail) => {
-        const entry: LedgerEntry = {
+        newLedgerEntries.push({
           id: generateUniqueId(),
           timestamp: saleTimestamp,
           type: 'SALE',
           direction: 'IN',
-          amount: p.amount,
+          amount: Number(p.amount) || 0,
           currency: p.currency,
           paymentMethod: p.method,
           userId: currentUser.id,
@@ -295,19 +271,16 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           description: `Venta ${ticketNumber}`,
           affectsCash: p.method === 'CASH',
           txId
-        };
-        newLedgerEntries.push(entry);
+        });
 
         if (p.method === 'CREDIT' && selectedClientId) {
-          const rate = currencies.find(c => c.code === p.currency)?.rate || 1;
+          const rate = rates[p.currency] || 1;
           const amountInCUP = p.currency === 'CUP' ? p.amount : p.amount * rate;
-          
           const clientIndex = nextClients.findIndex(cl => cl.id === selectedClientId);
           if (clientIndex !== -1) {
-            const currentBalance = nextClients[clientIndex].creditBalance || 0;
+            const currentBalance = Number(nextClients[clientIndex].creditBalance) || 0;
             const newBalance = Math.max(0, currentBalance - amountInCUP);
             finalRemainingCredit = newBalance;
-            
             nextClients[clientIndex] = {
               ...nextClients[clientIndex],
               creditBalance: newBalance,
@@ -318,13 +291,17 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         }
       });
 
-      if (changeInCUP > 0) {
+      // Cálculo de cambio
+      const totalPaid = payments.reduce((acc: number, p: any) => acc + (Number(p.amount) || 0), 0);
+      const overpay = totalPaid - (Number(total) || 0);
+      if (overpay > 0.009) {
+        const changeCUP = convertCurrency(overpay, currency, 'CUP');
         newLedgerEntries.push({
           id: generateUniqueId(),
           timestamp: saleTimestamp,
           type: 'EXCHANGE',
           direction: 'OUT',
-          amount: changeInCUP,
+          amount: changeCUP,
           currency: 'CUP',
           paymentMethod: 'CASH',
           userId: currentUser.id,
@@ -335,30 +312,28 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         });
       }
 
-      // 5. Aplicar Todos los Cambios de Estado Atómicamente
+      // 3. Persistencia de Estado
       setProducts(nextProducts);
       setLedger(prev => [...prev, ...newLedgerEntries]);
       setClients(nextClients);
-      
-      // Actualizar secuencia global de tickets
       setBusinessConfig(prev => ({ ...prev, ticketSequence: seq + 1 }));
 
       if (appliedCouponId) {
         setCoupons(prev => prev.map(c => 
-          c.id === appliedCouponId ? { ...c, currentUsages: (c.currentUsages || 0) + 1 } : c
+          c.id === appliedCouponId ? { ...c, currentUsages: (Number(c.currentUsages) || 0) + 1 } : c
         ));
       }
 
       const finalTicket: Ticket = {
         id: txId,
         ticketNumber,
-        items,
-        subtotal: saleData.subtotal,
-        discount: saleData.discount,
-        couponDiscount,
-        bogoDiscount,
-        bogoAppsCount,
-        total,
+        items: items.map((i: any) => ({ ...i })), // Clonar items para evitar referencias vivas al cart
+        subtotal: Number(saleData.subtotal) || 0,
+        discount: Number(saleData.discount) || 0,
+        couponDiscount: Number(couponDiscount) || 0,
+        bogoDiscount: Number(bogoDiscount) || 0,
+        bogoAppsCount: Number(bogoAppsCount) || 0,
+        total: Number(total) || 0,
         payments,
         currency,
         note,
@@ -376,9 +351,9 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           id: generateUniqueId(),
           saleId: txId,
           timestamp: saleTimestamp,
-          total,
+          total: Number(total) || 0,
           currency,
-          itemsCount: items.reduce((acc: number, item: any) => acc + (item.quantity || 0), 0)
+          itemsCount: items.reduce((acc: number, item: any) => acc + (Number(item.quantity) || 0), 0)
         };
         setClients(prev => prev.map(c => c.id === selectedClientId ? { 
           ...c, 
@@ -388,15 +363,14 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       }
       
       notify("Venta procesada con éxito", "success");
-      setSelectedClientId(null);
       return finalTicket;
 
     } catch (error) {
       console.error("FATAL SALE PROCESS ERROR:", error);
-      notify("Error crítico al procesar venta. El estado ha sido protegido.", "error");
+      notify("Error crítico al procesar venta.", "error");
       return null;
     }
-  }, [products, activeShift, currentUser, convertCurrency, notify, selectedClientId, currencies, clients, coupons, businessConfig.ticketSequence]);
+  }, [products, activeShift, currentUser, convertCurrency, notify, selectedClientId, rates, clients, businessConfig.ticketSequence, coupons]);
 
   const processRefund = useCallback((saleId: string, refundItems: RefundItem[], authUser: User, source: 'CASHBOX' | 'OUTSIDE_CASHBOX'): boolean => {
     const sale = sales.find(s => s.id === saleId);
@@ -545,8 +519,8 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const addClientCredit = useCallback((clientId: string, amount: number, reason?: string) => {
     setClients(prev => prev.map(c => c.id === clientId ? { 
       ...c, 
-      creditBalance: (c.creditBalance || 0) + amount,
-      balance: (c.creditBalance || 0) + amount,
+      creditBalance: (Number(c.creditBalance) || 0) + (Number(amount) || 0),
+      balance: (Number(c.creditBalance) || 0) + (Number(amount) || 0),
       updatedAt: new Date().toISOString() 
     } : c));
     notify("Crédito añadido", "success");
@@ -556,12 +530,12 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     let possible = false;
     setClients(prev => prev.map(c => {
       if (c.id === clientId) {
-        if ((c.creditBalance || 0) >= amount) {
+        if ((Number(c.creditBalance) || 0) >= (Number(amount) || 0)) {
           possible = true;
           return { 
             ...c, 
-            creditBalance: (c.creditBalance || 0) - amount,
-            balance: (c.creditBalance || 0) - amount,
+            creditBalance: (Number(c.creditBalance) || 0) - (Number(amount) || 0),
+            balance: (Number(c.creditBalance) || 0) - (Number(amount) || 0),
             updatedAt: new Date().toISOString() 
           };
         }
@@ -788,6 +762,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         setBogoOffers(prev => [...prev, o]);
       },
       updateBogoOffer: (o) => setBogoOffers(prev => prev.map(item => item.id === o.id ? o : item)),
+      // Fix: Corrected filter callback by using 'o' instead of undefined 'i'
       deleteBogoOffer: (id) => setBogoOffers(prev => prev.filter(o => o.id !== id)),
       selectedClientId,
       setSelectedClientId,

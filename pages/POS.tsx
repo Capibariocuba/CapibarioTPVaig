@@ -24,8 +24,18 @@ export const POS: React.FC = () => {
   void escapeHtml; // Uso neutro para cumplir con importación literal obligatoria
 
   // --- UTILIDADES DE PRECISIÓN ---
-  const round2 = (num: number) => Math.round((num + Number.EPSILON) * 100) / 100;
-  const formatNum = (num: number) => new Intl.NumberFormat('es-CU', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(num);
+  const round2 = (num: any) => {
+    const val = Number(num || 0);
+    return Math.round((val + Number.EPSILON) * 100) / 100;
+  };
+
+  const formatNum = (num: any) => {
+    const val = Number(num ?? 0);
+    return new Intl.NumberFormat('es-CU', { 
+      minimumFractionDigits: 2, 
+      maximumFractionDigits: 2 
+    }).format(isNaN(val) ? 0 : val);
+  };
 
   // --- ESTADOS LOCALES ---
   const [searchQuery, setSearchQuery] = useState('');
@@ -124,7 +134,7 @@ export const POS: React.FC = () => {
   // --- CÁLCULOS DEL TICKET ---
   const getEffectiveUnitPrice = (item: any) => {
     const p = products.find(prod => prod.id === item.id);
-    if (!p) return item.finalPrice;
+    if (!p) return Number(item.finalPrice || 0);
     const targetId = item.selectedVariantId || 'PARENT';
     const activeRules = p.pricingRules?.filter(r => 
         r.isActive !== false && 
@@ -132,17 +142,17 @@ export const POS: React.FC = () => {
         item.quantity >= r.minQuantity &&
         item.quantity <= r.maxQuantity
     ) || [];
-    if (activeRules.length > 0) return activeRules[0].newPrice;
-    return item.selectedVariantId ? (p.variants.find(v => v.id === item.selectedVariantId)?.price || p.price) : p.price;
+    if (activeRules.length > 0) return Number(activeRules[0].newPrice || 0);
+    return item.selectedVariantId ? (Number(p.variants.find(v => v.id === item.selectedVariantId)?.price || 0)) : Number(p.price || 0);
   };
 
   const convertValue = (valCUP: number) => {
-    const rate = rates[posCurrency] || 1;
+    const rate = Number(rates[posCurrency] || 1);
     return posCurrency === 'CUP' ? valCUP : valCUP / rate;
   };
 
   const cartSubtotal = useMemo(() => {
-    const sum = cart.reduce((acc, item) => acc + (convertValue(getEffectiveUnitPrice(item)) * item.quantity), 0);
+    const sum = cart.reduce((acc, item) => acc + (convertValue(getEffectiveUnitPrice(item)) * Number(item.quantity || 0)), 0);
     return round2(sum);
   }, [cart, posCurrency, rates]);
 
@@ -158,18 +168,18 @@ export const POS: React.FC = () => {
         const triggerItem = cart.find(i => i.id === offer.buyProductId && !i.selectedVariantId);
         const rewardItem = cart.find(i => i.id === offer.getProductId && !i.selectedVariantId);
         if (triggerItem && rewardItem) {
-            const applications = Math.floor(triggerItem.quantity / offer.buyQty);
-            const rewardAvailable = rewardItem.quantity;
-            const effectiveApps = Math.min(applications, Math.floor(rewardAvailable / offer.getQty));
+            const applications = Math.floor(Number(triggerItem.quantity || 0) / Number(offer.buyQty || 1));
+            const rewardAvailable = Number(rewardItem.quantity || 0);
+            const effectiveApps = Math.min(applications, Math.floor(rewardAvailable / Number(offer.getQty || 1)));
             if (effectiveApps > 0) {
                 const unitPriceCUP = getEffectiveUnitPrice(rewardItem);
                 const unitPriceCurrent = convertValue(unitPriceCUP);
                 let discountPerApp = 0;
-                if (offer.rewardType === 'FREE') discountPerApp = unitPriceCurrent * offer.getQty;
-                else if (offer.rewardType === 'PERCENT_DISCOUNT') discountPerApp = (unitPriceCurrent * (offer.rewardValue / 100)) * offer.getQty;
+                if (offer.rewardType === 'FREE') discountPerApp = unitPriceCurrent * Number(offer.getQty || 1);
+                else if (offer.rewardType === 'PERCENT_DISCOUNT') discountPerApp = (unitPriceCurrent * (Number(offer.rewardValue || 0) / 100)) * Number(offer.getQty || 1);
                 else if (offer.rewardType === 'FIXED_PRICE') {
-                    const priceDiff = unitPriceCurrent - convertValue(offer.rewardValue);
-                    discountPerApp = Math.max(0, priceDiff) * offer.getQty;
+                    const priceDiff = unitPriceCurrent - convertValue(Number(offer.rewardValue || 0));
+                    discountPerApp = Math.max(0, priceDiff) * Number(offer.getQty || 1);
                 }
                 totalDiscount += discountPerApp * effectiveApps;
                 totalApps += effectiveApps;
@@ -182,8 +192,8 @@ export const POS: React.FC = () => {
   const couponDiscountAmount = useMemo(() => {
     if (!appliedCoupon) return 0;
     let disc = 0;
-    if (appliedCoupon.type === 'PERCENTAGE') disc = cartSubtotal * (appliedCoupon.value / 100);
-    else disc = convertValue(appliedCoupon.value);
+    if (appliedCoupon.type === 'PERCENTAGE') disc = cartSubtotal * (Number(appliedCoupon.value || 0) / 100);
+    else disc = convertValue(Number(appliedCoupon.value || 0));
     return round2(disc);
   }, [appliedCoupon, cartSubtotal, posCurrency, rates]);
 
@@ -202,7 +212,7 @@ export const POS: React.FC = () => {
     if (found.isSuspended) { notify("Cupón suspendido", "error"); return; }
     if (now < new Date(found.startDate) || now > new Date(found.endDate)) { notify("Cupón fuera de vigencia", "error"); return; }
     if (found.usageLimit > 0 && found.currentUsages >= found.usageLimit) { notify("Límite de usos alcanzado", "error"); return; }
-    const minNeeded = convertValue(found.minInvoiceAmount || 0);
+    const minNeeded = convertValue(Number(found.minInvoiceAmount || 0));
     if (cartSubtotal < minNeeded) { notify(`Monto mínimo requerido: ${currencies.find(c => c.code === posCurrency)?.symbol}${minNeeded.toFixed(2)}`, "error"); return; }
     if (found.targetType === 'CLIENT' && found.targetId !== selectedClientId) { notify("Este cupón es exclusivo para otro cliente", "error"); return; }
     if (found.targetType === 'GROUP') {
@@ -282,15 +292,14 @@ export const POS: React.FC = () => {
   };
 
   const getTicketHTML = (ticket: Ticket | Sale) => {
-    const ticketRate = rates[ticket.currency] || 1;
+    const ticketRate = Number(rates[ticket.currency] || 1);
     const symbol = currencies.find(c => c.code === ticket.currency)?.symbol || '$';
     const dateStr = new Date(ticket.timestamp).toLocaleString();
     const client = clients.find(c => c.id === ticket.clientId);
-    const totalPaid = ticket.payments.reduce((acc, p) => acc + p.amount, 0);
-    const overpay = totalPaid - ticket.total;
+    const totalPaid = ticket.payments.reduce((acc, p) => acc + (Number(p.amount) || 0), 0);
+    const overpay = totalPaid - Number(ticket.total || 0);
     const changeCUP = overpay > 0.0001 ? round2(overpay * ticketRate) : 0;
 
-    // Saneamiento de variables dinámicas
     const safeBizName = safeText(businessConfig.name, { maxLen: 28, upper: true });
     const safeAddress = safeText(businessConfig.address, { maxLen: 60 });
     const safePhone = safeText(businessConfig.phone, { maxLen: 20 });
@@ -306,16 +315,16 @@ export const POS: React.FC = () => {
       <div style="font-size: 8pt; line-height: 1.4;">FECHA: ${dateStr}<br>VENDEDOR: ${safeSeller}<br>CLIENTE: ${safeClient}</div>
       <div class="dashed"></div>
       <table><thead><tr class="bold" style="border-bottom: 1px solid #000;"><th class="col-desc">DESC.</th><th class="col-qty">CT</th><th class="col-total">TOTAL</th></tr></thead><tbody>
-          ${ticket.items.map(i => {
-            const itemFinalAmount = i.quantity * i.finalPrice / (ticket.currency === 'CUP' ? 1 : ticketRate);
+          ${(ticket.items || []).map(i => {
+            const itemFinalAmount = Number(i.quantity || 0) * Number(i.finalPrice || 0) / (ticket.currency === 'CUP' ? 1 : ticketRate);
             return `<tr><td class="col-desc">${safeText(i.name, { maxLen: 20, upper: true })}</td><td class="col-qty">${i.quantity}</td><td class="col-total">${symbol}${formatNum(itemFinalAmount)}</td></tr>`;
           }).join('')}
       </tbody></table>
       <div class="dashed"></div>
-      <div style="font-size: 10pt;"><div style="display:flex; justify-content: space-between;"><span>SUBTOTAL:</span><span>${symbol}${formatNum(ticket.subtotal)}</span></div>${ticket.discount > 0 ? `<div style="display:flex; justify-content: space-between;"><span>DESC.:</span><span>-${symbol}${formatNum(ticket.discount)}</span></div>` : ''}<div style="display:flex; justify-content: space-between;" class="bold"><span>TOTAL (${safeCurrencyLabel}):</span><span>${symbol}${formatNum(ticket.total)}</span></div></div>
+      <div style="font-size: 10pt;"><div style="display:flex; justify-content: space-between;"><span>SUBTOTAL:</span><span>${symbol}${formatNum(ticket.subtotal)}</span></div>${Number(ticket.discount || 0) > 0 ? `<div style="display:flex; justify-content: space-between;"><span>DESC.:</span><span>-${symbol}${formatNum(ticket.discount)}</span></div>` : ''}<div style="display:flex; justify-content: space-between;" class="bold"><span>TOTAL (${safeCurrencyLabel}):</span><span>${symbol}${formatNum(ticket.total)}</span></div></div>
       <div class="dashed"></div>
       <div style="font-size: 9pt;"><p class="bold" style="margin-bottom: 1mm;">DETALLE DE PAGO:</p>
-        ${ticket.payments.map(p => {
+        ${(ticket.payments || []).map(p => {
           const safeMethodLabel = p.method === 'CREDIT' ? 'CRÉDITO CLIENTE' : safeText(p.method, { maxLen: 18, upper: true });
           const safePayCurrency = safeText(p.currency, { maxLen: 5, upper: true });
           let line = `<div style="display:flex; justify-content: space-between;"><span>${safeMethodLabel} (${safePayCurrency}):</span><span class="bold">${currencies.find(c => c.code === p.currency)?.symbol || '$'}${formatNum(p.amount)}</span></div>`;
@@ -338,13 +347,18 @@ export const POS: React.FC = () => {
 
   const handleConfirmSale = (payments: PaymentDetail[]) => {
     try {
+      if (!cart || cart.length === 0) {
+        notify("No hay productos en el carrito", "error");
+        return;
+      }
+
       const ticket = processSale({ 
           items: cart, 
           subtotal: cartSubtotal, 
-          discount: round2(couponDiscountAmount + bogoInfo.totalDiscount), 
-          couponDiscount: couponDiscountAmount,
-          bogoDiscount: bogoInfo.totalDiscount,
-          bogoAppsCount: bogoInfo.totalApps,
+          discount: round2(Number(couponDiscountAmount || 0) + Number(bogoInfo.totalDiscount || 0)), 
+          couponDiscount: Number(couponDiscountAmount || 0),
+          bogoDiscount: Number(bogoInfo.totalDiscount || 0),
+          bogoAppsCount: Number(bogoInfo.totalApps || 0),
           total: cartTotal, 
           payments, 
           currency: posCurrency, 
@@ -352,17 +366,19 @@ export const POS: React.FC = () => {
           appliedCouponId: appliedCoupon?.id 
       });
 
-      if (ticket) { 
+      if (ticket && ticket.id) { 
           setCurrentTicket(ticket); 
           setShowTicketModal(true); 
           clearCart(); 
           setAppliedCoupon(null); 
           setSelectedClientId(null); 
           setShowPaymentModal(false); 
+      } else {
+        notify("Error al generar el ticket de venta", "error");
       }
     } catch (err) {
-      console.error("UNHANDLED CONFIRM SALE ERROR:", err);
-      notify("Ocurrió un error inesperado al cerrar la venta. Revise la consola.", "error");
+      console.error("CRITICAL ERROR IN handleConfirmSale:", err);
+      notify("Ocurrió un fallo inesperado al cerrar la venta.", "error");
     }
   };
 
@@ -394,11 +410,11 @@ export const POS: React.FC = () => {
     if (!selectedOrder) return;
     const itemsToRefund: RefundItem[] = [];
     Object.entries(refundQtys).forEach(([cartId, qty]) => {
-        const q = qty as number;
+        const q = Number(qty || 0);
         if (q > 0) {
             const item = (selectedOrder.items as any[]).find(si => si.cartId === cartId);
             if (item) {
-                const unitPriceCUP = item.finalPrice;
+                const unitPriceCUP = Number(item.finalPrice || 0);
                 itemsToRefund.push({ cartId, qty: q, amountCUP: unitPriceCUP * q });
             }
         }
@@ -427,7 +443,7 @@ export const POS: React.FC = () => {
 
   if (!activeShift || showShiftManager) return <div className="h-full"><ShiftManager onOpen={() => setShowShiftManager(false)} /></div>;
 
-  const totalItemsCount = cart.reduce((acc, item) => acc + item.quantity, 0);
+  const totalItemsCount = cart.reduce((acc, item) => acc + Number(item.quantity || 0), 0);
 
   return (
     <div className="flex h-screen bg-gray-100 overflow-hidden relative font-sans animate-in fade-in duration-500">
@@ -455,8 +471,8 @@ export const POS: React.FC = () => {
             <div className="flex-1 overflow-y-auto p-2 md:p-4 custom-scrollbar pb-24 lg:pb-4">
                 <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-7 gap-1.5 md:gap-3">
                     {filteredProducts.map(p => {
-                        const effectivePrice = convertValue(p.price);
-                        const displayStock = (p.stock || 0) + (p.variants?.reduce((acc, v) => acc + (v.stock || 0), 0) || 0) - cart.filter(item => item.id === p.id).reduce((acc, item) => acc + item.quantity, 0);
+                        const effectivePrice = convertValue(Number(p.price || 0));
+                        const displayStock = (Number(p.stock) || 0) + (p.variants?.reduce((acc, v) => acc + (Number(v.stock) || 0), 0) || 0) - cart.filter(item => item.id === p.id).reduce((acc, item) => acc + Number(item.quantity || 0), 0);
                         return (
                             <button key={p.id} onClick={() => handleAddToCart(p)} disabled={displayStock <= 0} className={`bg-white rounded-xl md:rounded-3xl border border-slate-100 p-1.5 md:p-2 text-left flex flex-col h-auto group hover:shadow-xl hover:-translate-y-1 transition-all ${displayStock <= 0 ? 'opacity-50 grayscale' : ''}`}>
                                 <div className="aspect-square bg-gray-50 rounded-lg md:rounded-2xl mb-1.5 md:mb-3 overflow-hidden relative">
@@ -537,12 +553,12 @@ export const POS: React.FC = () => {
 
                     <div className="p-6 bg-white border-t border-gray-100 space-y-4">
                         <div className="space-y-2 border-b border-gray-100 pb-4">
-                            <div className="flex justify-between text-[10px] font-black text-slate-400 uppercase tracking-widest"><span>Subtotal</span><span>{currencies.find(c => c.code === posCurrency)?.symbol}{cartSubtotal.toFixed(2)}</span></div>
-                            {(bogoInfo.totalDiscount > 0 || couponDiscountAmount > 0) && (
-                                <div className="flex justify-between text-[10px] font-black text-amber-600 uppercase tracking-widest"><span>Descuentos</span><span>-{currencies.find(c => c.code === posCurrency)?.symbol}{(bogoInfo.totalDiscount + couponDiscountAmount).toFixed(2)}</span></div>
+                            <div className="flex justify-between text-[10px] font-black text-slate-400 uppercase tracking-widest"><span>Subtotal</span><span>{currencies.find(c => c.code === posCurrency)?.symbol}{formatNum(cartSubtotal)}</span></div>
+                            {(Number(bogoInfo.totalDiscount || 0) > 0 || Number(couponDiscountAmount || 0) > 0) && (
+                                <div className="flex justify-between text-[10px] font-black text-amber-600 uppercase tracking-widest"><span>Descuentos</span><span>-{currencies.find(c => c.code === posCurrency)?.symbol}{formatNum(Number(bogoInfo.totalDiscount || 0) + Number(couponDiscountAmount || 0))}</span></div>
                             )}
                         </div>
-                        <div className="flex justify-between items-center"><span className="font-black text-sm uppercase tracking-widest text-slate-400">Total</span><span className="text-3xl font-black text-slate-900 tracking-tighter">{currencies.find(c => c.code === posCurrency)?.symbol}{cartTotal.toFixed(2)}</span></div>
+                        <div className="flex justify-between items-center"><span className="font-black text-sm uppercase tracking-widest text-slate-400">Total</span><span className="text-3xl font-black text-slate-900 tracking-tighter">{currencies.find(c => c.code === posCurrency)?.symbol}{formatNum(cartTotal)}</span></div>
                         <button disabled={cart.length === 0} onClick={() => setShowPaymentModal(true)} className="w-full bg-slate-900 text-white font-black py-6 rounded-[2rem] shadow-2xl hover:bg-brand-600 transition-all uppercase tracking-[0.3em] text-[10px] disabled:opacity-50">Procesar Pago</button>
                     </div>
                 </div>
@@ -559,8 +575,8 @@ export const POS: React.FC = () => {
                                     <p className="text-[9px] font-bold text-slate-400 uppercase mt-0.5">{new Date(order.timestamp).toLocaleString()}</p>
                                 </div>
                                 <div className="text-right">
-                                    <div className="font-black text-slate-900 text-sm tracking-tighter">${order.total.toFixed(2)} {order.currency}</div>
-                                    <div className="text-[8px] font-black text-brand-500 uppercase">{order.items.reduce((acc, i) => acc + i.quantity, 0)} ítem(s)</div>
+                                    <div className="font-black text-slate-900 text-sm tracking-tighter">${formatNum(order.total)} {order.currency}</div>
+                                    <div className="text-[8px] font-black text-brand-500 uppercase">{order.items.reduce((acc, i) => acc + Number(i.quantity || 0), 0)} ítem(s)</div>
                                 </div>
                             </button>
                         ))}
@@ -584,7 +600,7 @@ export const POS: React.FC = () => {
                                         <p className="text-[9px] font-bold text-slate-400 uppercase mt-0.5">{p.customerName}</p>
                                     </div>
                                     <div className="text-right">
-                                        <div className="font-black text-slate-900 text-sm">$₱{p.totalCUP.toFixed(2)}</div>
+                                        <div className="font-black text-slate-900 text-sm">$₱{formatNum(p.totalCUP)}</div>
                                         <p className="text-[8px] font-bold text-slate-400 uppercase mt-0.5">{new Date(p.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</p>
                                     </div>
                                 </div>
@@ -647,7 +663,7 @@ export const POS: React.FC = () => {
                                         <tr key={item.cartId} className="text-[10px] font-bold text-slate-600">
                                             <td className="p-4 uppercase">{item.name}</td>
                                             <td className="p-4 text-center">{item.quantity}</td>
-                                            <td className="p-4 text-right font-black text-slate-800">${(item.quantity * item.finalPrice).toFixed(2)}</td>
+                                            <td className="p-4 text-right font-black text-slate-800">${formatNum(Number(item.quantity || 0) * Number(item.finalPrice || 0))}</td>
                                         </tr>
                                     ))}
                                 </tbody>
@@ -663,7 +679,7 @@ export const POS: React.FC = () => {
                                             <span className="font-bold text-slate-600">{new Date(r.timestamp).toLocaleString()} - Por: {r.authorizedBy}</span>
                                             <span className="text-[8px] font-black uppercase text-slate-400 mt-0.5">{r.refundSource === 'CASHBOX' ? 'Desde Caja' : 'Fuera de Caja'}</span>
                                         </div>
-                                        <span className="font-black text-red-500">-${r.totalCUP.toFixed(2)} CUP</span>
+                                        <span className="font-black text-red-500">-${formatNum(r.totalCUP)} CUP</span>
                                     </div>
                                 ))}
                             </div>
@@ -692,7 +708,7 @@ export const POS: React.FC = () => {
                         <div className="space-y-4">
                             {(selectedOrder.items as any[]).map(item => {
                                 const alreadyRefunded = selectedOrder.refunds?.reduce((acc, r) => acc + (r.items.find(ri => ri.cartId === item.cartId)?.qty || 0), 0) || 0;
-                                const maxAvailable = item.quantity - alreadyRefunded;
+                                const maxAvailable = Number(item.quantity || 0) - alreadyRefunded;
                                 if (maxAvailable <= 0) return null;
                                 return (
                                     <div key={item.cartId} className="bg-gray-50 p-5 rounded-3xl border border-gray-100 flex items-center gap-4">
@@ -754,14 +770,14 @@ export const POS: React.FC = () => {
                         <button onClick={() => setSelectedProductForVariants(null)} className="p-3 bg-white/10 hover:bg-white/20 rounded-2xl transition-all"><X size={24}/></button>
                     </div>
                     <div className="flex-1 overflow-y-auto p-6 bg-gray-50 custom-scrollbar grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <button disabled={selectedProductForVariants.stock <= 0} onClick={() => handleAddToCart(selectedProductForVariants, undefined, true)} className={`p-6 rounded-[2.5rem] border-2 text-left transition-all flex items-center gap-5 ${selectedProductForVariants.stock > 0 ? 'bg-white border-slate-100 hover:border-brand-500 shadow-sm' : 'bg-gray-100 border-gray-200 opacity-60 cursor-not-allowed'}`}>
+                        <button disabled={(Number(selectedProductForVariants.stock) || 0) <= 0} onClick={() => handleAddToCart(selectedProductForVariants, undefined, true)} className={`p-6 rounded-[2.5rem] border-2 text-left transition-all flex items-center gap-5 ${(Number(selectedProductForVariants.stock) || 0) > 0 ? 'bg-white border-slate-100 hover:border-brand-500 shadow-sm' : 'bg-gray-100 border-gray-200 opacity-60 cursor-not-allowed'}`}>
                             <div className="w-16 h-16 rounded-2xl bg-gray-100 overflow-hidden flex-shrink-0">{selectedProductForVariants.image ? <img src={selectedProductForVariants.image} className="w-full h-full object-cover" /> : <Package className="p-4 text-slate-300 w-full h-full" />}</div>
-                            <div className="flex-1"><h4 className="font-black text-slate-800 uppercase text-xs">Estándar (Base)</h4><div className="flex justify-between items-center mt-1"><span className="text-[10px] font-black text-brand-600">{currencies.find(c => c.code === posCurrency)?.symbol}{convertValue(selectedProductForVariants.price).toFixed(2)}</span><span className={`text-[8px] font-black uppercase px-2 py-0.5 rounded-full ${selectedProductForVariants.stock > 5 ? 'bg-emerald-50 text-emerald-600' : 'bg-red-50 text-red-600'}`}>{selectedProductForVariants.stock} DISP.</span></div></div>
+                            <div className="flex-1"><h4 className="font-black text-slate-800 uppercase text-xs">Estándar (Base)</h4><div className="flex justify-between items-center mt-1"><span className="text-[10px] font-black text-brand-600">{currencies.find(c => c.code === posCurrency)?.symbol}{formatNum(convertValue(Number(selectedProductForVariants.price || 0)))}</span><span className={`text-[8px] font-black uppercase px-2 py-0.5 rounded-full ${(Number(selectedProductForVariants.stock) || 0) > 5 ? 'bg-emerald-50 text-emerald-600' : 'bg-red-50 text-red-600'}`}>{selectedProductForVariants.stock} DISP.</span></div></div>
                         </button>
                         {selectedProductForVariants.variants?.map(v => (
-                            <button key={v.id} disabled={v.stock <= 0} onClick={() => handleAddToCart(selectedProductForVariants, v.id)} className={`p-6 rounded-[2.5rem] border-2 text-left transition-all flex items-center gap-5 ${v.stock > 0 ? 'bg-white border-slate-100 hover:border-brand-500 shadow-sm' : 'bg-gray-100 border-gray-200 opacity-60 cursor-not-allowed'}`}>
+                            <button key={v.id} disabled={(Number(v.stock) || 0) <= 0} onClick={() => handleAddToCart(selectedProductForVariants, v.id)} className={`p-6 rounded-[2.5rem] border-2 text-left transition-all flex items-center gap-5 ${(Number(v.stock) || 0) > 0 ? 'bg-white border-slate-100 hover:border-brand-500 shadow-sm' : 'bg-gray-100 border-gray-200 opacity-60 cursor-not-allowed'}`}>
                                 <div className="w-16 h-16 rounded-2xl bg-gray-100 overflow-hidden flex-shrink-0 relative">{v.image ? <img src={v.image} className="w-full h-full object-cover" /> : <div className="w-full h-full" style={{ backgroundColor: v.color || '#64748b' }}></div>}</div>
-                                <div className="flex-1"><h4 className="font-black text-slate-800 uppercase text-xs line-clamp-1">{v.name}</h4><div className="flex justify-between items-center mt-1"><span className="text-[10px] font-black text-brand-600">{currencies.find(c => c.code === posCurrency)?.symbol}{convertValue(v.price).toFixed(2)}</span><span className={`text-[8px] font-black uppercase px-2 py-0.5 rounded-full ${v.stock > 5 ? 'bg-emerald-50 text-emerald-600' : 'bg-red-50 text-red-600'}`}>{v.stock} DISP.</span></div></div>
+                                <div className="flex-1"><h4 className="font-black text-slate-800 uppercase text-xs line-clamp-1">{v.name}</h4><div className="flex justify-between items-center mt-1"><span className="text-[10px] font-black text-brand-600">{currencies.find(c => c.code === posCurrency)?.symbol}{formatNum(convertValue(Number(v.price || 0)))}</span><span className={`text-[8px] font-black uppercase px-2 py-0.5 rounded-full ${(Number(v.stock) || 0) > 5 ? 'bg-emerald-50 text-emerald-600' : 'bg-red-50 text-red-600'}`}>{v.stock} DISP.</span></div></div>
                             </button>
                         ))}
                     </div>

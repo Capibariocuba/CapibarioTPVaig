@@ -20,8 +20,8 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ total, currencyCode,
 
   const selectedCurrency = currencies.find(c => c.code === currencyCode);
   const client = clients.find(c => c.id === clientId);
-  const clientBalanceCUP = client?.creditBalance || 0;
-  const clientBalanceInCurrent = currencyCode === 'CUP' ? clientBalanceCUP : clientBalanceCUP / (rates[currencyCode] || 1);
+  const clientBalanceCUP = Number(client?.creditBalance || 0);
+  const clientBalanceInCurrent = currencyCode === 'CUP' ? clientBalanceCUP : clientBalanceCUP / (Number(rates[currencyCode] || 1));
 
   const allowedMethods = useMemo(() => {
     const base = businessConfig.paymentMethods
@@ -37,29 +37,28 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ total, currencyCode,
     return base;
   }, [businessConfig.paymentMethods, selectedCurrency, clientId, clientBalanceCUP]);
 
-  const totalPaid = payments.reduce((acc, p) => acc + p.amount, 0);
-  const remaining = Math.max(0, total - totalPaid);
-  const isCovered = totalPaid >= total - 0.009; // Precisión decimal
+  const totalPaid = payments.reduce((acc, p) => acc + (Number(p.amount) || 0), 0);
+  const remaining = Math.max(0, Number(total || 0) - totalPaid);
+  const isCovered = totalPaid >= Number(total || 0) - 0.009;
 
   const changeInCUP = useMemo(() => {
-    if (totalPaid <= total) return 0;
-    const overpay = totalPaid - total;
-    // Tasa: Si total esta en USD y quiero CUP. overpay * rateUSD
-    const rateOfCurrent = rates[currencyCode] || 1;
+    if (totalPaid <= Number(total || 0)) return 0;
+    const overpay = totalPaid - Number(total || 0);
+    const rateOfCurrent = Number(rates[currencyCode] || 1);
     return overpay * rateOfCurrent;
   }, [totalPaid, total, currencyCode, rates]);
 
   useEffect(() => {
     if (remaining > 0) setAmount(remaining.toFixed(2));
-    else setAmount('0');
+    else setAmount('0.00');
   }, [remaining]);
 
   const addPayment = () => {
     const val = parseFloat(amount);
-    if (!val || val <= 0) return;
+    if (isNaN(val) || val <= 0) return;
 
     if (method === 'CREDIT') {
-      const alreadyUsedCredit = payments.filter(p => p.method === 'CREDIT').reduce((acc, p) => acc + p.amount, 0);
+      const alreadyUsedCredit = payments.filter(p => p.method === 'CREDIT').reduce((acc, p) => acc + Number(p.amount || 0), 0);
       if (val + alreadyUsedCredit > clientBalanceInCurrent + 0.001) {
         notify("Saldo insuficiente en línea de crédito", "error");
         return;
@@ -89,11 +88,11 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ total, currencyCode,
             <div className="mb-6 md:mb-8 text-center bg-gray-50 p-4 md:p-6 rounded-2xl md:rounded-[2rem]">
                 <p className="text-[9px] md:text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Monto de Venta</p>
                 <div className="text-3xl md:text-4xl font-black text-slate-900 tracking-tighter">
-                    {selectedCurrency?.symbol}{total.toFixed(2)}
+                    {selectedCurrency?.symbol}{Number(total || 0).toFixed(2)}
                 </div>
                 {clientId && (
                   <p className="mt-2 text-[10px] font-black uppercase text-brand-500 tracking-widest">
-                    Saldo Crédito: {selectedCurrency?.symbol}{clientBalanceInCurrent.toFixed(2)}
+                    Saldo Crédito: {selectedCurrency?.symbol}{Number(clientBalanceInCurrent || 0).toFixed(2)}
                   </p>
                 )}
             </div>
@@ -127,7 +126,7 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ total, currencyCode,
                         {payments.map((p, i) => (
                             <div key={i} className="bg-white p-3 md:p-4 rounded-xl md:rounded-2xl border border-slate-100 flex justify-between items-center animate-in slide-in-from-right">
                                 <div>
-                                    <div className="font-black text-sm md:text-base text-slate-800">{selectedCurrency?.symbol}{p.amount.toFixed(2)}</div>
+                                    <div className="font-black text-sm md:text-base text-slate-800">{selectedCurrency?.symbol}{Number(p.amount || 0).toFixed(2)}</div>
                                     <div className="text-[8px] md:text-[9px] text-brand-500 font-black uppercase">{p.method === 'CREDIT' ? 'Crédito' : p.method}</div>
                                 </div>
                                 <button onClick={() => setPayments(payments.filter((_, idx) => idx !== i))} className="text-red-300 hover:text-red-500"><Trash2 size={16}/></button>
@@ -149,12 +148,12 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ total, currencyCode,
             <div className="space-y-2 mb-4">
                 <div className="flex justify-between text-[9px] md:text-[10px] font-black text-slate-400 uppercase">
                   <span>Total Pagado:</span>
-                  <span className="text-slate-800">{selectedCurrency?.symbol}{totalPaid.toFixed(2)}</span>
+                  <span className="text-slate-800">{selectedCurrency?.symbol}{Number(totalPaid || 0).toFixed(2)}</span>
                 </div>
                 {changeInCUP > 0 && (
                   <div className="flex justify-between text-[9px] md:text-[10px] font-black text-emerald-600 uppercase bg-emerald-50 p-2 rounded-xl">
                     <span>Vuelto (CUP):</span>
-                    <span>₱{changeInCUP.toFixed(2)}</span>
+                    <span>₱{Number(changeInCUP || 0).toFixed(2)}</span>
                   </div>
                 )}
             </div>
