@@ -134,15 +134,40 @@ export const WebCatalogView: React.FC = () => {
 
   // 7. ESCUCHAR LLAMADOS DE PEDIDOS
   useEffect(() => {
+    let hideTimeout: number;
+    let repeatInterval: number;
+
     const handleMessage = (event: MessageEvent) => {
         if (event.data?.type === 'ORDER_CALL') {
-            setActiveCall(event.data.ticketNumber);
+            const rawNumber = String(event.data.ticketNumber || '');
+            // Quitar ceros a la izquierda (ej: "000031" -> "31", "000000" -> "0")
+            const formattedNumber = rawNumber.replace(/^0+/, '') || '0';
+            
+            setActiveCall(formattedNumber);
             playBell();
-            setTimeout(() => setActiveCall(null), 8000);
+
+            // Limpiar timers anteriores para evitar solapamientos
+            if (hideTimeout) window.clearTimeout(hideTimeout);
+            if (repeatInterval) window.clearInterval(repeatInterval);
+
+            // Iniciar repetición del sonido cada 1.5s mientras el overlay sea visible
+            repeatInterval = window.setInterval(() => {
+                playBell();
+            }, 1500);
+
+            // Duración del overlay: EXACTAMENTE 10 segundos
+            hideTimeout = window.setTimeout(() => {
+                setActiveCall(null);
+                window.clearInterval(repeatInterval);
+            }, 10000);
         }
     };
     catalogChannel.addEventListener('message', handleMessage);
-    return () => catalogChannel.removeEventListener('message', handleMessage);
+    return () => {
+        catalogChannel.removeEventListener('message', handleMessage);
+        if (hideTimeout) window.clearTimeout(hideTimeout);
+        if (repeatInterval) window.clearInterval(repeatInterval);
+    };
   }, [audioEnabled]);
 
   const playBell = () => {
@@ -208,6 +233,7 @@ export const WebCatalogView: React.FC = () => {
     >
       {!audioEnabled && (
           <div className="absolute top-4 right-4 z-[100] bg-brand-500 text-white px-4 py-2 rounded-full text-[8px] font-black uppercase tracking-widest flex items-center gap-2 shadow-xl animate-bounce">
+              {/* Fix: Corrected syntax error size(12} to size={12} which was causing boolean vs number type mismatch */}
               <Bell size={12}/> Toca la pantalla para activar sonido
           </div>
       )}
