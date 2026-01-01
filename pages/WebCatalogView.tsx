@@ -1,7 +1,7 @@
 
-import React, { useMemo, useState, useEffect } from 'react';
+import React, { useMemo, useState, useEffect, useRef } from 'react';
 import { useStore } from '../context/StoreContext';
-import { Sparkles, AlertCircle, UtensilsCrossed, RefreshCw, Layers } from 'lucide-react';
+import { Sparkles, AlertCircle, UtensilsCrossed, RefreshCw, Layers, Bell } from 'lucide-react';
 import { Product } from '../types';
 
 // CONFIGURACIÓN DE PANTALLA DERECHA
@@ -10,6 +10,9 @@ const ANIM_DURATION = 500; // ms
 const ROW_DELAYS = [120, 0, 180, 40, 220, 80, 150, 30, 200, 100]; // Delays "regados" para el stagger
 
 type TransitionPhase = 'IDLE' | 'EXITING' | 'ENTERING';
+
+// Canal de comunicación para llamado de pedidos
+const catalogChannel = new BroadcastChannel('capibario_catalog_calls');
 
 export const WebCatalogView: React.FC = () => {
   const { 
@@ -28,6 +31,11 @@ export const WebCatalogView: React.FC = () => {
   // Estados para la animación staggered
   const [transitionPhase, setTransitionPhase] = useState<TransitionPhase>('IDLE');
   const [renderData, setRenderData] = useState<{ catName: string; items: Product[] } | null>(null);
+
+  // Estados para llamado de pedidos
+  const [activeCall, setActiveCall] = useState<string | null>(null);
+  const [audioEnabled, setAudioEnabled] = useState(false);
+  const audioContextRef = useRef<AudioContext | null>(null);
 
   const rotationSeconds = businessConfig.digitalCatalogRotationSeconds || 10;
 
@@ -124,7 +132,58 @@ export const WebCatalogView: React.FC = () => {
     return () => clearInterval(interval);
   }, [businessConfig.digitalCatalogImages]);
 
-  // 7. MONEDA
+  // 7. ESCUCHAR LLAMADOS DE PEDIDOS
+  useEffect(() => {
+    const handleMessage = (event: MessageEvent) => {
+        if (event.data?.type === 'ORDER_CALL') {
+            setActiveCall(event.data.ticketNumber);
+            playBell();
+            setTimeout(() => setActiveCall(null), 8000);
+        }
+    };
+    catalogChannel.addEventListener('message', handleMessage);
+    return () => catalogChannel.removeEventListener('message', handleMessage);
+  }, [audioEnabled]);
+
+  const playBell = () => {
+    if (!audioEnabled) return;
+    try {
+        if (!audioContextRef.current) {
+            audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
+        }
+        const ctx = audioContextRef.current;
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        
+        osc.type = 'triangle';
+        osc.frequency.setValueAtTime(880, ctx.currentTime); // A5
+        osc.frequency.exponentialRampToValueAtTime(440, ctx.currentTime + 0.5);
+        
+        gain.gain.setValueAtTime(0, ctx.currentTime);
+        gain.gain.linearRampToValueAtTime(0.5, ctx.currentTime + 0.05);
+        gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 1.5);
+        
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        
+        osc.start();
+        osc.stop(ctx.currentTime + 2);
+    } catch (e) {
+        console.error("Audio error", e);
+    }
+  };
+
+  const enableAudio = () => {
+    setAudioEnabled(true);
+    if (!audioContextRef.current) {
+        audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
+    }
+    if (audioContextRef.current.state === 'suspended') {
+        audioContextRef.current.resume();
+    }
+  };
+
+  // 8. MONEDA
   const currencySymbol = useMemo(() => {
     const curr = currencies.find(c => c.code === businessConfig.primaryCurrency);
     return curr?.symbol || '$';
@@ -143,7 +202,16 @@ export const WebCatalogView: React.FC = () => {
   const slides = businessConfig.digitalCatalogImages || [];
 
   return (
-    <div className="h-screen w-screen bg-slate-950 text-white overflow-hidden flex font-sans select-none transition-colors duration-500">
+    <div 
+        className="h-screen w-screen bg-slate-950 text-white overflow-hidden flex font-sans select-none transition-colors duration-500 relative"
+        onClick={!audioEnabled ? enableAudio : undefined}
+    >
+      {!audioEnabled && (
+          <div className="absolute top-4 right-4 z-[100] bg-brand-500 text-white px-4 py-2 rounded-full text-[8px] font-black uppercase tracking-widest flex items-center gap-2 shadow-xl animate-bounce">
+              <Bell size={12}/> Toca la pantalla para activar sonido
+          </div>
+      )}
+
       <style>{`
         @keyframes marquee {
           0% { transform: translateX(100%); }
@@ -178,7 +246,31 @@ export const WebCatalogView: React.FC = () => {
           transform: translateX(0);
           opacity: 1;
         }
+
+        .call-pulse {
+            animation: callPulse 2s infinite ease-in-out;
+        }
+
+        @keyframes callPulse {
+            0% { transform: scale(1); opacity: 1; }
+            50% { transform: scale(1.05); opacity: 0.95; }
+            100% { transform: scale(1); opacity: 1; }
+        }
       `}</style>
+
+      {/* OVERLAY DE LLAMADO DE PEDIDOS */}
+      {activeCall && (
+          <div className="fixed inset-0 z-[200] bg-slate-950/80 backdrop-blur-2xl flex items-center justify-center p-10 animate-in fade-in duration-500">
+              <div className="bg-white text-slate-950 w-[800px] h-[800px] rounded-full flex flex-col items-center justify-center text-center shadow-[0_0_100px_rgba(255,255,255,0.4)] border-[20px] border-brand-500 call-pulse animate-in zoom-in duration-700">
+                  <Bell size={120} className="text-brand-500 mb-10 animate-bounce" />
+                  <h2 className="text-6xl font-black uppercase tracking-tighter mb-4">Ticket #{activeCall}</h2>
+                  <div className="bg-slate-900 text-white px-10 py-5 rounded-[2rem] font-black text-4xl uppercase tracking-[0.2em]">
+                      Listo para Recoger
+                  </div>
+                  <p className="mt-12 text-slate-400 font-bold uppercase tracking-widest text-xl">Por favor, acérquese al mostrador</p>
+              </div>
+          </div>
+      )}
 
       {/* LADO IZQUIERDO: VISUAL (Slideshow + Ticker) */}
       <div className="w-[45%] h-full flex flex-col border-r border-white/5 bg-slate-900 z-10">

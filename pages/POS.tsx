@@ -3,7 +3,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { useStore } from '../context/StoreContext';
 import { 
     Search, Plus, Minus, Trash2, Receipt, User as UserIcon, Tag, Ticket as TicketIcon, 
-    Lock, Unlock, Layers, X, AlertTriangle, Monitor, ChevronRight, CheckCircle, Percent, Wallet, DollarSign, Calendar, Zap, Package, LogOut, Printer, FileDown, Sparkles, Gift, ArrowLeft, History, RefreshCcw, Key, Box
+    Lock, Unlock, Layers, X, AlertTriangle, Monitor, ChevronRight, CheckCircle, Percent, Wallet, DollarSign, Calendar, Zap, Package, LogOut, Printer, FileDown, Sparkles, Gift, ArrowLeft, History, RefreshCcw, Key, Box, Bell, Clock, Trash
 } from 'lucide-react';
 import { PaymentModal } from '../components/PaymentModal';
 import { Currency, Ticket, Product, PaymentDetail, Coupon, ProductVariant, Client, View, BogoOffer, Sale, RefundItem, User, Role } from '../types';
@@ -18,7 +18,7 @@ export const POS: React.FC = () => {
     clients, selectedClientId, setSelectedClientId,
     posCurrency, setPosCurrency, currentUser, login, coupons, bogoOffers, isItemLocked,
     businessConfig, activePosTerminalId, setActivePosTerminalId, notify, currencies,
-    sales, processRefund, validatePin
+    sales, processRefund, validatePin, pendingOrders, addToWaitingList, callOrder, removePendingOrder
   } = useStore();
   
   void escapeHtml; // Uso neutro para cumplir con importación literal obligatoria
@@ -42,7 +42,7 @@ export const POS: React.FC = () => {
   const [isClientModalOpen, setIsClientModalOpen] = useState(false);
 
   // NUEVOS ESTADOS FASE ÓRDENES
-  const [activeRightTab, setActiveRightTab] = useState<'CART' | 'ORDERS'>('CART');
+  const [activeRightTab, setActiveRightTab] = useState<'CART' | 'ORDERS' | 'PENDING'>('CART');
   const [orderSearch, setOrderSearch] = useState('');
   const [selectedOrder, setSelectedOrder] = useState<Sale | null>(null);
   const [isRefundModalOpen, setIsRefundModalOpen] = useState(false);
@@ -474,9 +474,14 @@ export const POS: React.FC = () => {
 
         <div className={`fixed lg:relative inset-y-0 right-0 w-full lg:w-[420px] bg-white shadow-2xl flex flex-col z-[100] transition-transform duration-500 ${isTicketOpen ? 'translate-x-0' : 'translate-x-full lg:translate-x-0'}`}>
             
-            <div className="flex bg-slate-900 p-1.5 shrink-0">
-                <button onClick={() => setActiveRightTab('CART')} className={`flex-1 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-2 transition-all ${activeRightTab === 'CART' ? 'bg-white text-slate-900 shadow-xl' : 'text-slate-400 hover:text-white'}`}><Receipt size={16}/> Ticket {cart.length > 0 && `(${totalItemsCount})`}</button>
-                <button onClick={() => setActiveRightTab('ORDERS')} className={`flex-1 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-2 transition-all ${activeRightTab === 'ORDERS' ? 'bg-white text-slate-900 shadow-xl' : 'text-slate-400 hover:text-white'}`}><History size={16}/> Órdenes</button>
+            <div className="flex bg-slate-900 p-1.5 shrink-0 overflow-x-auto scrollbar-hide">
+                <button onClick={() => setActiveRightTab('CART')} className={`flex-1 min-w-[100px] py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-2 transition-all ${activeRightTab === 'CART' ? 'bg-white text-slate-900 shadow-xl' : 'text-slate-400 hover:text-white'}`}><Receipt size={16}/> Ticket {cart.length > 0 && `(${totalItemsCount})`}</button>
+                <button onClick={() => setActiveRightTab('ORDERS')} className={`flex-1 min-w-[100px] py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-2 transition-all ${activeRightTab === 'ORDERS' ? 'bg-white text-slate-900 shadow-xl' : 'text-slate-400 hover:text-white'}`}><History size={16}/> Órdenes</button>
+                {businessConfig.isOrderCallingActive && (
+                    <button onClick={() => setActiveRightTab('PENDING')} className={`flex-1 min-w-[100px] py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-2 transition-all ${activeRightTab === 'PENDING' ? 'bg-white text-slate-900 shadow-xl' : 'text-slate-400 hover:text-white'}`}>
+                        <Bell size={16}/> Espera {pendingOrders.length > 0 && `(${pendingOrders.length})`}
+                    </button>
+                )}
                 <button onClick={() => setIsTicketOpen(false)} className="lg:hidden p-3 text-white"><X size={18}/></button>
             </div>
 
@@ -541,7 +546,7 @@ export const POS: React.FC = () => {
                         <button disabled={cart.length === 0} onClick={() => setShowPaymentModal(true)} className="w-full bg-slate-900 text-white font-black py-6 rounded-[2rem] shadow-2xl hover:bg-brand-600 transition-all uppercase tracking-[0.3em] text-[10px] disabled:opacity-50">Procesar Pago</button>
                     </div>
                 </div>
-            ) : (
+            ) : activeRightTab === 'ORDERS' ? (
                 <div className="flex-1 flex flex-col overflow-hidden bg-gray-50 animate-in fade-in">
                     <div className="p-4 border-b border-gray-200">
                         <div className="relative"><Search className="absolute left-3 top-3 text-slate-300" size={14}/><input className="w-full bg-white p-2.5 pl-9 rounded-xl font-bold text-[10px] outline-none border border-gray-200" placeholder="BUSCAR TICKET O CLIENTE..." value={orderSearch} onChange={e => setOrderSearch(e.target.value)} /></div>
@@ -559,6 +564,53 @@ export const POS: React.FC = () => {
                                 </div>
                             </button>
                         ))}
+                    </div>
+                </div>
+            ) : (
+                <div className="flex-1 flex flex-col overflow-hidden bg-gray-50 animate-in fade-in">
+                    <div className="p-6 border-b border-gray-100 flex items-center justify-between bg-slate-900 text-white">
+                        <div>
+                           <h3 className="font-black uppercase tracking-tighter text-lg flex items-center gap-2"><Clock size={20} className="text-brand-400"/> Lista de Espera</h3>
+                           <p className="text-[8px] font-bold uppercase opacity-60">Pedidos listos para retiro</p>
+                        </div>
+                        <span className="bg-brand-500 px-3 py-1 rounded-full text-[10px] font-black">{pendingOrders.length}</span>
+                    </div>
+                    <div className="flex-1 overflow-y-auto p-4 space-y-3 custom-scrollbar">
+                        {pendingOrders.map(p => (
+                            <div key={p.id} className="bg-white p-5 rounded-[2.5rem] border border-slate-100 flex flex-col gap-4 shadow-sm hover:shadow-md transition-all">
+                                <div className="flex justify-between items-start">
+                                    <div>
+                                        <h4 className="font-black text-slate-900 uppercase text-xs">TICKET #{p.ticketNumber}</h4>
+                                        <p className="text-[9px] font-bold text-slate-400 uppercase mt-0.5">{p.customerName}</p>
+                                    </div>
+                                    <div className="text-right">
+                                        <div className="font-black text-slate-900 text-sm">$₱{p.totalCUP.toFixed(2)}</div>
+                                        <p className="text-[8px] font-bold text-slate-400 uppercase mt-0.5">{new Date(p.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</p>
+                                    </div>
+                                </div>
+                                <div className="flex gap-2">
+                                    <button 
+                                        onClick={() => callOrder(p.id)} 
+                                        className="flex-1 bg-brand-500 text-white py-3 rounded-2xl font-black uppercase text-[9px] tracking-widest flex items-center justify-center gap-2 hover:bg-brand-600 transition-all shadow-lg shadow-brand-100"
+                                    >
+                                        <Bell size={14}/> Llamar
+                                    </button>
+                                    <button 
+                                        onClick={() => removePendingOrder(p.id)} 
+                                        className="p-3 bg-red-50 text-red-400 rounded-2xl hover:bg-red-500 hover:text-white transition-all"
+                                        title="Eliminar de lista"
+                                    >
+                                        <Trash size={14}/>
+                                    </button>
+                                </div>
+                            </div>
+                        ))}
+                        {pendingOrders.length === 0 && (
+                            <div className="h-full flex flex-col items-center justify-center text-slate-300 py-20 opacity-30">
+                                <Clock size={64} className="mb-4"/>
+                                <p className="font-black uppercase text-xs tracking-widest">Sin pedidos pendientes</p>
+                            </div>
+                        )}
                     </div>
                 </div>
             )}
@@ -731,17 +783,30 @@ export const POS: React.FC = () => {
                         </div>
                     </div>
 
-                    <div className="flex flex-col md:flex-row gap-2 mb-2 shrink-0">
-                        <button 
-                            onClick={() => {
-                                const html = getTicketHTML(currentTicket);
-                                printRawHTML(html);
-                            }} 
-                            className="flex-1 bg-slate-100 text-slate-700 py-4 rounded-2xl font-black uppercase text-[10px] tracking-widest flex items-center justify-center gap-2 hover:bg-gray-200 transition-all"
-                        >
-                            <Printer size={16}/> Imprimir
-                        </button>
-                        <button onClick={() => setShowTicketModal(false)} className="flex-1 bg-slate-900 text-white font-black py-4 rounded-2xl uppercase tracking-[0.2em] text-[10px] shadow-xl">Finalizar</button>
+                    <div className="flex flex-col gap-3 shrink-0">
+                        <div className="flex flex-col md:flex-row gap-2">
+                            <button 
+                                onClick={() => {
+                                    const html = getTicketHTML(currentTicket);
+                                    printRawHTML(html);
+                                }} 
+                                className="flex-1 bg-slate-100 text-slate-700 py-4 rounded-2xl font-black uppercase text-[10px] tracking-widest flex items-center justify-center gap-2 hover:bg-gray-200 transition-all"
+                            >
+                                <Printer size={16}/> Imprimir
+                            </button>
+                            {businessConfig.isOrderCallingActive && (
+                                <button 
+                                    onClick={() => {
+                                        addToWaitingList(currentTicket);
+                                        setShowTicketModal(false);
+                                    }} 
+                                    className="flex-1 bg-brand-50 text-brand-600 py-4 rounded-2xl font-black uppercase text-[10px] tracking-widest flex items-center justify-center gap-2 hover:bg-brand-100 transition-all"
+                                >
+                                    <Bell size={16}/> En espera
+                                </button>
+                            )}
+                        </div>
+                        <button onClick={() => setShowTicketModal(false)} className="w-full bg-slate-900 text-white font-black py-4 rounded-2xl uppercase tracking-[0.2em] text-[10px] shadow-xl">Finalizar</button>
                     </div>
                 </div>
             </div>

@@ -90,6 +90,14 @@ export interface PeripheralsSettings {
   scannerCameraPreference?: 'rear' | 'front';
 }
 
+export interface PendingOrder {
+  id: string;
+  ticketNumber: string;
+  timestamp: string;
+  totalCUP: number;
+  customerName?: string;
+}
+
 export interface BusinessConfig {
   name: string;
   showName: boolean;
@@ -121,6 +129,7 @@ export interface BusinessConfig {
   peripherals?: PeripheralsSettings;
   isWebCatalogActive?: boolean;
   webCatalogPort?: number;
+  isOrderCallingActive?: boolean;
   // NUEVOS CAMPOS CATÁLOGO DIGITAL
   digitalCatalogImages?: string[];
   digitalCatalogTicker?: string;
@@ -310,26 +319,6 @@ export interface Sale extends Ticket {
   refunds?: Refund[];
 }
 
-export interface Product {
-  id: string;
-  warehouseId: string;
-  name: string;
-  categories: string[];
-  price: number;
-  cost: number;
-  sku: string; // SKU o Barcode
-  stock: number;
-  minStockAlert: number;
-  image?: string;
-  expiryDate?: string;
-  isService?: boolean;
-  variants: ProductVariant[];
-  pricingRules: PricingRule[];
-  history: AuditLog[];
-  batches?: Batch[];
-  hidden?: boolean;
-}
-
 export interface PurchaseHistoryItem {
   id: string;
   saleId: string;
@@ -499,10 +488,36 @@ export interface StoreContextType {
   activePosTerminalId: string | null;
   setActivePosTerminalId: (id: string | null) => void;
   
+  // LLAMADO DE PEDIDOS
+  pendingOrders: PendingOrder[];
+  addToWaitingList: (ticket: Ticket) => void;
+  callOrder: (orderId: string) => void;
+  removePendingOrder: (orderId: string) => void;
+
   // EMPLEADOS CRUD
   employees: Employee[];
   addEmployee: (employee: Employee, rawPin: string) => Promise<void>;
   updateEmployee: (employee: Employee, rawPin?: string) => Promise<void>;
   deleteEmployee: (id: string) => void;
   addEmployeePayment: (employeeId: string, payment: EmployeePaymentEvent) => void;
+}
+
+export interface Product {
+  id: string;
+  warehouseId: string;
+  name: string;
+  categories: string[];
+  price: number;
+  cost: number;
+  sku: string; // SKU o Barcode
+  stock: number;
+  minStockAlert: number;
+  image?: string;
+  expiryDate?: string;
+  isService?: boolean;
+  variants: ProductVariant[];
+  pricingRules: PricingRule[];
+  history: AuditLog[];
+  batches?: Batch[];
+  hidden?: boolean;
 }

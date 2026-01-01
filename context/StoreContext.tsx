@@ -1,9 +1,9 @@
 
-import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, useMemo } from 'react';
 import { 
   StoreContextType, View, CurrencyConfig, LedgerEntry, User, 
   BusinessConfig, Coupon, BogoOffer, Offer, Role, Product, Client, ClientGroup, Ticket, Sale, Warehouse, LicenseTier, POSStoreTerminal, Category, PaymentDetail, PurchaseHistoryItem, Shift, Refund, RefundItem,
-  Employee, EmployeePaymentEvent, SalaryType, PayFrequency
+  Employee, EmployeePaymentEvent, SalaryType, PayFrequency, PendingOrder
 } from '../types';
 import { MOCK_USERS, DEFAULT_BUSINESS_CONFIG, CATEGORIES as DEFAULT_CATEGORIES } from '../constants';
 import { PermissionEngine } from '../security/PermissionEngine';
@@ -31,6 +31,9 @@ const DEFAULT_CURRENCIES: CurrencyConfig[] = [
   { code: 'EUR', symbol: '€', rate: 340, allowedPaymentMethods: ['CASH', 'TRANSFER'] }
 ];
 
+// Canal de comunicación para llamado de pedidos
+const catalogChannel = new BroadcastChannel('capibario_catalog_calls');
+
 export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [view, setView] = useState<View>(View.POS);
   const [currentUser, setCurrentUser] = useState<User | null>(() => {
@@ -45,6 +48,11 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     if (saved && saved !== '[]') return JSON.parse(saved);
     return DEFAULT_CURRENCIES;
   });
+
+  // Fix: Define 'rates' here so it's available for subsequent hooks and callbacks
+  const rates = useMemo(() => 
+    currencies.reduce((acc, c) => ({ ...acc, [c.code]: c.rate }), {} as Record<string, number>)
+  , [currencies]);
 
   const [warehouses, setWarehouses] = useState<Warehouse[]>(() => {
     const saved = JSON.parse(localStorage.getItem('warehouses') || '[]');
@@ -127,6 +135,11 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     return saved ? JSON.parse(saved) : [];
   });
 
+  const [pendingOrders, setPendingOrders] = useState<PendingOrder[]>(() => {
+    const saved = localStorage.getItem('pendingOrders');
+    return saved ? JSON.parse(saved) : [];
+  });
+
   const notify = useCallback((message: string, type: 'error' | 'success' = 'error') => {
     setNotification({ message, type });
     setTimeout(() => setNotification(null), 4000);
@@ -151,8 +164,9 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     localStorage.setItem('offers', JSON.stringify(offers));
     localStorage.setItem('activeShift', JSON.stringify(activeShift));
     localStorage.setItem('employees', JSON.stringify(employees));
+    localStorage.setItem('pendingOrders', JSON.stringify(pendingOrders));
     if (activePosTerminalId) localStorage.setItem('activePosTerminalId', activePosTerminalId);
-  }, [currentUser, users, businessConfig, currencies, warehouses, categories, products, sales, ledger, clients, clientGroups, coupons, bogoOffers, offers, activeShift, activePosTerminalId, employees]);
+  }, [currentUser, users, businessConfig, currencies, warehouses, categories, products, sales, ledger, clients, clientGroups, coupons, bogoOffers, offers, activeShift, activePosTerminalId, employees, pendingOrders]);
 
   const convertCurrency = useCallback((amount: number, from: string, to: string) => {
     const fromRate = currencies.find(c => c.code === from)?.rate || 1;
@@ -484,6 +498,39 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     localStorage.removeItem('currentUser');
   }, []);
 
+  const addToWaitingList = useCallback((ticket: Ticket) => {
+    const totalCUP = ticket.currency === 'CUP' ? ticket.total : ticket.total * (rates[ticket.currency] || 1);
+    const client = clients.find(c => c.id === ticket.clientId);
+    const newPending: PendingOrder = {
+      id: ticket.id,
+      ticketNumber: ticket.ticketNumber || ticket.id.slice(-6),
+      timestamp: new Date().toISOString(),
+      totalCUP,
+      customerName: client?.name || 'Consumidor Final'
+    };
+    setPendingOrders(prev => {
+        if (prev.some(p => p.id === newPending.id)) return prev;
+        return [...prev, newPending];
+    });
+    notify("Pedido enviado a lista de espera", "success");
+  }, [rates, clients, notify]);
+
+  const callOrder = useCallback((orderId: string) => {
+    const order = pendingOrders.find(p => p.id === orderId);
+    if (!order) return;
+
+    // Disparar evento a catálogo
+    catalogChannel.postMessage({ type: 'ORDER_CALL', ticketNumber: order.ticketNumber });
+    
+    // Eliminar de pendientes
+    setPendingOrders(prev => prev.filter(p => p.id !== orderId));
+    notify(`Llamando Ticket #${order.ticketNumber}`, "success");
+  }, [pendingOrders, notify]);
+
+  const removePendingOrder = useCallback((orderId: string) => {
+    setPendingOrders(prev => prev.filter(p => p.id !== orderId));
+  }, []);
+
   const updateUserPin = useCallback(async (userId: string, newPin: string) => {
     if (!userId || newPin.length !== 4) return;
     const hashed = await hashPin(newPin);
@@ -612,6 +659,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       view, setView, currentUser, users, businessConfig, updateBusinessConfig: setBusinessConfig,
       currencies, warehouses, categories, ledger, products, sales, clients, coupons, bogoOffers, offers,
       activePosTerminalId, setActivePosTerminalId,
+      pendingOrders, addToWaitingList, callOrder, removePendingOrder,
       addWarehouse: (w) => {
         if (!PermissionEngine.enforcePlanLimits('WAREHOUSES', warehouses.length, getCurrentTier())) {
           notify(`Límite de almacenes alcanzado para el plan ${getCurrentTier()}.`, 'error');
@@ -705,7 +753,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       updateCurrency: (c) => setCurrencies(prev => prev.map(curr => curr.code === c.code ? c : curr)),
       deleteCurrency: (code) => setCurrencies(prev => prev.filter(c => c.code !== code)),
       isItemLocked: (key, idx) => PermissionEngine.isItemSoftLocked(key, idx, getCurrentTier()),
-      rates: currencies.reduce((acc, c) => ({ ...acc, [c.code]: c.rate }), {}),
+      rates,
       getCurrentCash,
       getLedgerBalance: (currency: string, method: string) => {
         return ledger

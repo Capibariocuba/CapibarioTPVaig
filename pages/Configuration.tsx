@@ -7,7 +7,7 @@ import {
   Save, Plus, Trash2, Key, Crown, Printer, Barcode, CreditCard, 
   Phone, Mail, MapPin, Hash, Receipt, AlertCircle, Banknote, Globe, Wallet, Camera, Monitor, LogIn, LogOut, CheckSquare, Square, X,
   ArrowRight, Sparkles, Cloud, Zap, ExternalLink, Copy, Info, QrCode, Image as ImageIcon, Timer, Palette, Cpu, MessageCircle, Check, ShieldAlert,
-  Edit3, History as HistoryIcon, Smartphone, Wifi, Bluetooth, Usb, Link
+  Edit3, History as HistoryIcon, Smartphone, Wifi, Bluetooth, Usb, Link, Bell
 } from 'lucide-react';
 
 export const Configuration: React.FC = () => {
@@ -271,6 +271,24 @@ export const Configuration: React.FC = () => {
                 <select className="w-full bg-gray-50 p-4 rounded-2xl font-bold outline-none" value={tempBiz.primaryCurrency} onChange={e => setTempBiz({...tempBiz, primaryCurrency: e.target.value})}>{currencies.map(c => <option key={c.code} value={c.code}>{c.code}</option>)}</select>
                 <input className="w-full bg-gray-50 p-4 rounded-2xl font-bold outline-none" placeholder="Pie Ticket" value={tempBiz.footerMessage} onChange={e => setTempBiz({...tempBiz, footerMessage: e.target.value})} />
               </div>
+            </div>
+
+            <div className="mt-8 pt-8 border-t border-gray-100 flex items-center justify-between bg-slate-50 p-6 rounded-3xl">
+              <div className="flex items-center gap-4">
+                <div className="p-3 bg-white rounded-2xl shadow-sm text-brand-500">
+                  <Bell size={24}/>
+                </div>
+                <div>
+                  <h4 className="text-sm font-black uppercase text-slate-800 tracking-tighter">Llamado de Pedidos (Lista de Espera)</h4>
+                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Activa el sistema de avisos en el catálogo online</p>
+                </div>
+              </div>
+              <button 
+                onClick={() => setTempBiz({...tempBiz, isOrderCallingActive: !tempBiz.isOrderCallingActive})} 
+                className={`w-14 h-7 rounded-full p-1 transition-all ${tempBiz.isOrderCallingActive ? 'bg-emerald-500' : 'bg-slate-300'}`}
+              >
+                <div className={`bg-white w-5 h-5 rounded-full shadow-md transition-all ${tempBiz.isOrderCallingActive ? 'translate-x-7' : 'translate-x-0'}`}></div>
+              </button>
             </div>
           </section>
 
