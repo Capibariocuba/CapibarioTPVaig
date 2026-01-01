@@ -236,8 +236,11 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       const txId = generateUniqueId();
       const saleTimestamp = new Date().toISOString();
 
+      // --- GENERACIÓN DE NÚMERO DE TICKET CONSECUTIVO ---
+      const seq = businessConfig.ticketSequence || 1;
+      const ticketNumber = seq < 1000000 ? seq.toString().padStart(6, '0') : seq.toString();
+
       // 3. Preparación de Cambios de Estado (Rollback safety)
-      // Generamos el nuevo array de productos localmente
       const nextProducts = products.map(p => {
         const cartItem = items.find((i: any) => i.id === p.id);
         if (!cartItem) return p;
@@ -254,7 +257,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           timestamp: saleTimestamp,
           type: 'STOCK_ADJUST',
           userName: currentUser.name,
-          details: `Venta: -${cartItem.quantity} unidades (Ticket ${txId.slice(-6)})`
+          details: `Venta: -${cartItem.quantity} unidades (Ticket ${ticketNumber})`
         }, ...(newP.history || [])];
         return newP;
       });
@@ -275,7 +278,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           paymentMethod: p.method,
           userId: currentUser.id,
           userName: currentUser.name,
-          description: `Venta ${txId.slice(-6)}`,
+          description: `Venta ${ticketNumber}`,
           affectsCash: p.method === 'CASH',
           txId
         };
@@ -312,7 +315,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           paymentMethod: 'CASH',
           userId: currentUser.id,
           userName: currentUser.name,
-          description: `Cambio Venta ${txId.slice(-6)}`,
+          description: `Cambio Venta ${ticketNumber}`,
           affectsCash: true,
           txId
         });
@@ -323,6 +326,9 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       setLedger(prev => [...prev, ...newLedgerEntries]);
       setClients(nextClients);
       
+      // Actualizar secuencia global de tickets
+      setBusinessConfig(prev => ({ ...prev, ticketSequence: seq + 1 }));
+
       if (appliedCouponId) {
         setCoupons(prev => prev.map(c => 
           c.id === appliedCouponId ? { ...c, currentUsages: (c.currentUsages || 0) + 1 } : c
@@ -331,6 +337,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
       const finalTicket: Ticket = {
         id: txId,
+        ticketNumber,
         items,
         subtotal: saleData.subtotal,
         discount: saleData.discount,
@@ -375,7 +382,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       notify("Error crítico al procesar venta. El estado ha sido protegido.", "error");
       return null;
     }
-  }, [products, activeShift, currentUser, convertCurrency, notify, selectedClientId, currencies, clients, coupons]);
+  }, [products, activeShift, currentUser, convertCurrency, notify, selectedClientId, currencies, clients, coupons, businessConfig.ticketSequence]);
 
   const processRefund = useCallback((saleId: string, refundItems: RefundItem[], authUser: User, source: 'CASHBOX' | 'OUTSIDE_CASHBOX'): boolean => {
     const sale = sales.find(s => s.id === saleId);
@@ -384,6 +391,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     const totalRefundCUP = refundItems.reduce((acc, item) => acc + item.amountCUP, 0);
     const timestamp = new Date().toISOString();
     const refundId = generateUniqueId();
+    const saleLabel = sale.ticketNumber || saleId.slice(-6);
 
     if (source === 'CASHBOX') {
         const cashAvailable = getCurrentCash().CUP;
@@ -415,7 +423,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           timestamp,
           type: 'REFUND_RESTOCK',
           userName: authUser.name,
-          details: `Reembolso Ticket ${saleId.slice(-6)} (${source === 'CASHBOX' ? 'En Caja' : 'Fuera Caja'}): +${ri.qty} unidades`,
+          details: `Reembolso Ticket ${saleLabel} (${source === 'CASHBOX' ? 'En Caja' : 'Fuera Caja'}): +${ri.qty} unidades`,
           entityType: cartItemInSale.selectedVariantId ? 'VARIANT' : 'PRODUCT',
           entityId: cartItemInSale.selectedVariantId || p.id
         }, ...(newP.history || [])];
@@ -430,7 +438,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           amount: totalRefundCUP,
           currency: 'CUP',
           paymentMethod: 'CASH',
-          description: `Reembolso Ticket ${saleId.slice(-6)}`,
+          description: `Reembolso Ticket ${saleLabel}`,
           txId: refundId
         });
     }

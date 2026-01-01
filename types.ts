@@ -286,6 +286,7 @@ export interface Refund {
 
 export interface Ticket {
   id: string;
+  ticketNumber?: string;
   items: any[];
   subtotal: number;
   discount: number;

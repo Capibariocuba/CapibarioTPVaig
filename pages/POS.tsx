@@ -75,7 +75,7 @@ export const POS: React.FC = () => {
   const filteredOrders = useMemo(() => {
     const q = orderSearch.toLowerCase();
     return [...sales].reverse().filter(s => 
-        s.id.toLowerCase().includes(q) || 
+        (s.ticketNumber || s.id).toLowerCase().includes(q) || 
         (s.clientId && clients.find(c => c.id === s.clientId)?.name.toLowerCase().includes(q))
     );
   }, [sales, orderSearch, clients]);
@@ -257,7 +257,6 @@ export const POS: React.FC = () => {
       return;
     }
 
-    // Crear iframe oculto para evitar popups bloqueados
     const iframe = document.createElement('iframe');
     iframe.style.position = 'fixed';
     iframe.style.right = '0';
@@ -271,7 +270,6 @@ export const POS: React.FC = () => {
       if (iframe.contentWindow) {
         iframe.contentWindow.focus();
         iframe.contentWindow.print();
-        // Limpieza tras un tiempo prudencial
         setTimeout(() => {
           if (document.body.contains(iframe)) {
             document.body.removeChild(iframe);
@@ -292,11 +290,11 @@ export const POS: React.FC = () => {
     const overpay = totalPaid - ticket.total;
     const changeCUP = overpay > 0.0001 ? round2(overpay * ticketRate) : 0;
 
-    // Saneamiento de variables dinámicas usando safeText (trunca ANTES de escapar)
+    // Saneamiento de variables dinámicas
     const safeBizName = safeText(businessConfig.name, { maxLen: 28, upper: true });
     const safeAddress = safeText(businessConfig.address, { maxLen: 60 });
     const safePhone = safeText(businessConfig.phone, { maxLen: 20 });
-    const safeTicketId = safeText(ticket.id.slice(-6), { maxLen: 6 });
+    const safeTicketId = safeText(ticket.ticketNumber || ticket.id.slice(-6), { maxLen: 12 });
     const safeSeller = safeText(ticket.sellerName || 'SISTEMA', { maxLen: 30, upper: true });
     const safeClient = safeText(client?.name || 'CONSUMIDOR FINAL', { maxLen: 30, upper: true });
     const safeFooter = safeText(businessConfig.footerMessage, { maxLen: 80, upper: true });
@@ -361,10 +359,6 @@ export const POS: React.FC = () => {
           setAppliedCoupon(null); 
           setSelectedClientId(null); 
           setShowPaymentModal(false); 
-      } else {
-          // Si processSale retorna null, las notificaciones internas ya se dispararon.
-          // No limpiamos el carrito para permitir reintentos.
-          console.warn("Sale processing returned null - possible validation fail or managed exception.");
       }
     } catch (err) {
       console.error("UNHANDLED CONFIRM SALE ERROR:", err);
@@ -372,7 +366,6 @@ export const POS: React.FC = () => {
     }
   };
 
-  // --- LÓGICA DE REEMBOLSOS ---
   const handleStartRefund = (order: Sale) => {
     if (currentUser?.role === Role.ADMIN || currentUser?.role === Role.ACCOUNTANT) {
         setRefundQtys({});
@@ -401,7 +394,6 @@ export const POS: React.FC = () => {
     if (!selectedOrder) return;
     const itemsToRefund: RefundItem[] = [];
     Object.entries(refundQtys).forEach(([cartId, qty]) => {
-        // Fix: Explicitly cast qty to number to handle "unknown" potentials in some TS environments
         const q = qty as number;
         if (q > 0) {
             const item = (selectedOrder.items as any[]).find(si => si.cartId === cartId);
@@ -440,7 +432,6 @@ export const POS: React.FC = () => {
   return (
     <div className="flex h-screen bg-gray-100 overflow-hidden relative font-sans animate-in fade-in duration-500">
         
-        {/* --- COLUMNA IZQUIERDA: CATÁLOGO --- */}
         <div className="flex-1 flex flex-col h-full bg-gray-50 border-r border-gray-200 min-w-0">
             <div className="bg-white p-3 md:p-4 border-b border-gray-100 flex flex-col md:flex-row gap-3 md:gap-4 items-center shrink-0">
                 <div className="relative flex-1 group w-full">
@@ -481,10 +472,8 @@ export const POS: React.FC = () => {
             </div>
         </div>
 
-        {/* --- COLUMNA DERECHA: TICKET Y ÓRDENES --- */}
         <div className={`fixed lg:relative inset-y-0 right-0 w-full lg:w-[420px] bg-white shadow-2xl flex flex-col z-[100] transition-transform duration-500 ${isTicketOpen ? 'translate-x-0' : 'translate-x-full lg:translate-x-0'}`}>
             
-            {/* TABS SELECTOR */}
             <div className="flex bg-slate-900 p-1.5 shrink-0">
                 <button onClick={() => setActiveRightTab('CART')} className={`flex-1 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-2 transition-all ${activeRightTab === 'CART' ? 'bg-white text-slate-900 shadow-xl' : 'text-slate-400 hover:text-white'}`}><Receipt size={16}/> Ticket {cart.length > 0 && `(${totalItemsCount})`}</button>
                 <button onClick={() => setActiveRightTab('ORDERS')} className={`flex-1 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-2 transition-all ${activeRightTab === 'ORDERS' ? 'bg-white text-slate-900 shadow-xl' : 'text-slate-400 hover:text-white'}`}><History size={16}/> Órdenes</button>
@@ -512,7 +501,6 @@ export const POS: React.FC = () => {
                         )}
                     </div>
 
-                    {/* SECCIÓN CUPÓN */}
                     <div className="px-6 py-4 bg-white border-t border-gray-100">
                         {appliedCoupon ? (
                             <div className="flex items-center justify-between bg-emerald-50 p-4 rounded-2xl border border-emerald-100 animate-in zoom-in">
@@ -562,7 +550,7 @@ export const POS: React.FC = () => {
                         {filteredOrders.map(order => (
                             <button key={order.id} onClick={() => setSelectedOrder(order)} className="w-full bg-white p-4 rounded-[2rem] border border-slate-100 flex items-center justify-between hover:shadow-xl transition-all group">
                                 <div className="text-left">
-                                    <h4 className="font-black text-slate-800 uppercase text-[10px] tracking-widest flex items-center gap-2">TICKET #{order.id.slice(-6)} {order.refunds?.length ? <RefreshCcw size={10} className="text-amber-500"/> : null}</h4>
+                                    <h4 className="font-black text-slate-800 uppercase text-[10px] tracking-widest flex items-center gap-2">TICKET #{order.ticketNumber || order.id.slice(-6)} {order.refunds?.length ? <RefreshCcw size={10} className="text-amber-500"/> : null}</h4>
                                     <p className="text-[9px] font-bold text-slate-400 uppercase mt-0.5">{new Date(order.timestamp).toLocaleString()}</p>
                                 </div>
                                 <div className="text-right">
@@ -576,14 +564,13 @@ export const POS: React.FC = () => {
             )}
         </div>
 
-        {/* MODAL DETALLE DE ORDEN */}
         {selectedOrder && (
             <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-md flex items-center justify-center z-[200] p-4 animate-in fade-in">
                 <div className="bg-white rounded-[4rem] w-full max-w-2xl h-[85vh] flex flex-col shadow-2xl animate-in zoom-in overflow-hidden">
                     <div className="p-8 bg-slate-900 text-white flex justify-between items-center shrink-0">
                         <div>
                             <h2 className="text-2xl font-black uppercase tracking-tighter flex items-center gap-3"><History size={24}/> Ficha de Orden</h2>
-                            <p className="text-[10px] text-brand-400 font-bold uppercase tracking-widest">ID: {selectedOrder.id}</p>
+                            <p className="text-[10px] text-brand-400 font-bold uppercase tracking-widest">TICKET: {selectedOrder.ticketNumber || selectedOrder.id}</p>
                         </div>
                         <button onClick={() => setSelectedOrder(null)} className="p-3 bg-white/10 rounded-2xl"><X size={20}/></button>
                     </div>
@@ -639,7 +626,6 @@ export const POS: React.FC = () => {
             </div>
         )}
 
-        {/* MODAL REEMBOLSO */}
         {isRefundModalOpen && selectedOrder && (
             <div className="fixed inset-0 bg-slate-950/90 backdrop-blur-xl z-[300] flex items-center justify-center p-4 animate-in fade-in">
                 <div className="bg-white rounded-[4rem] w-full max-w-xl shadow-2xl animate-in zoom-in overflow-hidden flex flex-col h-auto max-h-[85vh]">
@@ -672,7 +658,6 @@ export const POS: React.FC = () => {
                             })}
                         </div>
 
-                        {/* SECTOR ORIGEN REEMBOLSO */}
                         <div className="bg-gray-50 p-6 rounded-[2rem] border border-gray-100">
                              <h4 className="text-[10px] font-black uppercase text-slate-400 mb-4 tracking-widest">Origen del Reembolso</h4>
                              <div className="grid grid-cols-2 gap-3">
@@ -685,9 +670,6 @@ export const POS: React.FC = () => {
                                     <span className="text-[8px] font-black uppercase tracking-tighter">Fuera de Caja</span>
                                 </button>
                              </div>
-                             <p className="mt-3 text-[8px] font-bold text-slate-400 uppercase text-center leading-tight">
-                                {refundSource === 'CASHBOX' ? 'Resta efectivo de la caja del turno (requiere liquidez).' : 'Devuelve stock sin afectar el efectivo del turno.'}
-                             </p>
                         </div>
                     </div>
                     <div className="p-8 bg-white border-t border-gray-100">
@@ -697,7 +679,6 @@ export const POS: React.FC = () => {
             </div>
         )}
 
-        {/* MODAL PIN AUTORIZACIÓN */}
         {showAuthPinModal && (
             <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-xl z-[400] flex items-center justify-center p-4">
                 <div className="bg-white p-12 rounded-[3.5rem] shadow-2xl max-sm w-full text-center animate-in zoom-in">
@@ -710,7 +691,6 @@ export const POS: React.FC = () => {
             </div>
         )}
 
-        {/* --- MODAL SELECTOR DE VARIANTES --- */}
         {selectedProductForVariants && (
             <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-md flex items-center justify-center z-[200] p-4 animate-in fade-in">
                 <div className="bg-white rounded-[4rem] w-full max-w-2xl overflow-hidden flex flex-col shadow-2xl animate-in zoom-in">
@@ -737,16 +717,14 @@ export const POS: React.FC = () => {
             </div>
         )}
 
-        {/* MODALES Y OTROS COMPONENTES */}
         {showPaymentModal && <PaymentModal total={cartTotal} currencyCode={posCurrency} clientId={selectedClientId} onClose={() => setShowPaymentModal(false)} onConfirm={handleConfirmSale} />}
         {showTicketModal && currentTicket && (
             <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-md flex items-center justify-center z-[300] p-4">
-                <div className="bg-white p-8 md:p-10 rounded-[4rem] w-full max-w-md text-center shadow-2xl animate-in zoom-in overflow-hidden flex flex-col">
+                <div className="bg-white p-8 md:p-10 rounded-[4rem] w-full max-md text-center shadow-2xl animate-in zoom-in overflow-hidden flex flex-col">
                     <div className="bg-emerald-50 text-emerald-600 p-6 rounded-full w-20 h-20 flex items-center justify-center mx-auto mb-6 shadow-inner shrink-0"><Receipt size={40}/></div>
                     <h3 className="text-2xl md:text-3xl font-black uppercase tracking-tighter mb-2 shrink-0">Venta Exitosa</h3>
-                    <p className="text-[10px] text-slate-400 font-black uppercase tracking-widest mb-6 shrink-0">Comprobante ID: {currentTicket.id.slice(-6)}</p>
+                    <p className="text-[10px] text-slate-400 font-black uppercase tracking-widest mb-6 shrink-0">TICKET: {currentTicket.ticketNumber}</p>
                     
-                    {/* VISTA PREVIA DEL TICKET */}
                     <div className="flex-1 bg-gray-50 border border-gray-100 rounded-3xl p-4 mb-6 overflow-y-auto max-h-[40vh] custom-scrollbar text-left shadow-inner">
                         <div className="bg-white p-4 shadow-sm min-h-full ticket-preview-content">
                             <div dangerouslySetInnerHTML={{ __html: getTicketHTML(currentTicket) }} />
@@ -757,7 +735,6 @@ export const POS: React.FC = () => {
                         <button 
                             onClick={() => {
                                 const html = getTicketHTML(currentTicket);
-                                console.log("Imprimiendo Ticket - Length:", html?.length, "ID:", currentTicket.id);
                                 printRawHTML(html);
                             }} 
                             className="flex-1 bg-slate-100 text-slate-700 py-4 rounded-2xl font-black uppercase text-[10px] tracking-widest flex items-center justify-center gap-2 hover:bg-gray-200 transition-all"
@@ -770,7 +747,6 @@ export const POS: React.FC = () => {
             </div>
         )}
 
-        {/* MODAL SELECTOR CLIENTES */}
         {isClientModalOpen && (
             <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-md flex items-center justify-center z-[200] p-4 animate-in fade-in">
                 <div className="bg-white rounded-[3rem] w-full max-w-xl shadow-2xl overflow-hidden animate-in zoom-in h-[70vh] flex flex-col">
