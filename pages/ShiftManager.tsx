@@ -8,7 +8,7 @@ import { escapeHtml, safeText } from '../utils/escapeHtml';
 export const ShiftManager: React.FC<{ onOpen?: () => void }> = ({ onOpen }) => {
   const { 
     activeShift, openShift, closeShift, getCurrentCash, currentUser, validatePin, 
-    sales, products, businessConfig, notify, logout, ledger 
+    sales, products, businessConfig, notify, logout, ledger, pendingOrders
   } = useStore();
   
   void escapeHtml; // Uso neutro para cumplir con importación literal obligatoria
@@ -85,15 +85,25 @@ export const ShiftManager: React.FC<{ onOpen?: () => void }> = ({ onOpen }) => {
       const pId = p.id;
       const startStock = currentShift.initialStock[pId] || 0;
       
+      // Cálculo de entradas sumando deltas positivos según logs
       const entriesQty = (p.history || [])
         .filter(log => {
           const logTime = new Date(log.timestamp).getTime();
-          return logTime >= startTime && logTime <= endTime && 
-                 log.type === 'STOCK_ADJUST' && 
-                 log.entityType === 'PRODUCT' && 
-                 log.entityId === pId;
+          return logTime >= startTime && logTime <= endTime;
         })
-        .reduce((sum, log) => sum + (Number(log.details_raw?.after?.qty) || 0), 0);
+        .reduce((sum, log) => {
+          let delta = 0;
+          if (log.type === 'STOCK_ADJUST') {
+            // Caso entrada directa por reposición
+            delta = Number(log.details_raw?.after?.qty) || 0;
+          } else if (log.type === 'UPDATED') {
+            // Caso edición manual del stock (calculamos delta positivo)
+            const before = Number(log.details_raw?.before?.stock) || 0;
+            const after = Number(log.details_raw?.after?.stock) || 0;
+            delta = after - before;
+          }
+          return sum + Math.max(0, delta);
+        }, 0);
 
       let soldQty = 0;
       let refundedQty = 0;
@@ -128,12 +138,19 @@ export const ShiftManager: React.FC<{ onOpen?: () => void }> = ({ onOpen }) => {
         const entriesV = (p.history || [])
           .filter(log => {
             const logTime = new Date(log.timestamp).getTime();
-            return logTime >= startTime && logTime <= endTime && 
-                   log.type === 'STOCK_ADJUST' && 
-                   log.entityType === 'VARIANT' && 
-                   log.entityId === v.id;
+            return logTime >= startTime && logTime <= endTime && log.entityId === v.id;
           })
-          .reduce((sum, log) => sum + (Number(log.details_raw?.after?.qty) || 0), 0);
+          .reduce((sum, log) => {
+            let delta = 0;
+            if (log.type === 'STOCK_ADJUST') {
+              delta = Number(log.details_raw?.after?.qty) || 0;
+            } else if (log.type === 'VARIANT_UPDATED') {
+              const before = Number(log.details_raw?.before?.stock) || 0;
+              const after = Number(log.details_raw?.after?.stock) || 0;
+              delta = after - before;
+            }
+            return sum + Math.max(0, delta);
+          }, 0);
 
         let soldV = 0;
         let refundedV = 0;
@@ -167,6 +184,13 @@ export const ShiftManager: React.FC<{ onOpen?: () => void }> = ({ onOpen }) => {
 
   const handleConfirmClosure = () => {
     if (!activeShift) return;
+
+    // A) BLOQUEO POR ÓRDENES PENDIENTES
+    if (pendingOrders.length > 0) {
+      notify(`No se puede cerrar el turno: Existen ${pendingOrders.length} órdenes en lista de espera por llamar.`, "error");
+      return;
+    }
+
     const finalCounts: Record<string, number> = {};
     
     let hasMismatch = false;
@@ -238,6 +262,9 @@ export const ShiftManager: React.FC<{ onOpen?: () => void }> = ({ onOpen }) => {
     const safeOpenedBy = safeText(s.shift.openedBy, { upper: true });
     const safeClosedBy = safeText(s.closedBy, { upper: true });
 
+    const totalDiscounts = (Number(s.couponDisc) || 0) + (Number(s.bogoDisc) || 0);
+    const hasOffers = totalDiscounts > 0 || (Number(s.bogoApps) || 0) > 0;
+
     return `
       <div style="font-family: 'Courier New', Courier, monospace; width: 72mm; color: #000; font-size: 10pt; line-height: 1.2;">
         <div style="text-align: center; margin-bottom: 4mm;">
@@ -280,15 +307,18 @@ export const ShiftManager: React.FC<{ onOpen?: () => void }> = ({ onOpen }) => {
             <div style="display:flex; justify-content: space-between; font-weight:bold; margin-top:1mm;"><span>TOTAL DEV.:</span><span>$${formatNum((Number(s.refundsIn) || 0) + (Number(s.refundsOut) || 0))}</span></div>
         </div>
 
+        ${hasOffers ? `
         <div style="border-bottom: 1px solid #000; margin: 3mm 0 2mm 0;"></div>
         <p style="font-weight: bold; margin: 0 0 1mm 0;">DESCUENTOS Y OFERTAS</p>
         <div style="font-size: 8pt;">
-            <div style="display:flex; justify-content: space-between;"><span>CUPONES:</span><span>$${formatNum(s.couponDisc)}</span></div>
-            <div style="display:flex; justify-content: space-between;"><span>BOGO:</span><span>$${formatNum(s.bogoDisc)}</span></div>
-            <div style="display:flex; justify-content: space-between;"><span>APPS BOGO:</span><span>${s.bogoApps}</span></div>
-            <div style="display:flex; justify-content: space-between; font-weight:bold; margin-top:1mm;"><span>TOTAL DESC.:</span><span>$${formatNum((Number(s.couponDisc) || 0) + (Number(s.bogoDisc) || 0))}</span></div>
+            ${Number(s.couponDisc) > 0 ? `<div style="display:flex; justify-content: space-between;"><span>CUPONES:</span><span>$${formatNum(s.couponDisc)}</span></div>` : ''}
+            ${Number(s.bogoDisc) > 0 ? `<div style="display:flex; justify-content: space-between;"><span>BOGO:</span><span>$${formatNum(s.bogoDisc)}</span></div>` : ''}
+            ${Number(s.bogoApps) > 0 ? `<div style="display:flex; justify-content: space-between;"><span>APPS BOGO:</span><span>${s.bogoApps}</span></div>` : ''}
+            <div style="display:flex; justify-content: space-between; font-weight:bold; margin-top:1mm;"><span>TOTAL DESC.:</span><span>$${formatNum(totalDiscounts)}</span></div>
         </div>
+        ` : ''}
 
+        ${businessConfig.includeInventoryInZReport !== false ? `
         <div style="border-bottom: 1px solid #000; margin: 3mm 0 2mm 0;"></div>
         <p style="font-weight: bold; margin: 0 0 1mm 0;">MOVIMIENTO INVENTARIO (NETO)</p>
         <table style="width: 100%; font-size: 7pt; border-collapse: collapse;">
@@ -309,6 +339,7 @@ export const ShiftManager: React.FC<{ onOpen?: () => void }> = ({ onOpen }) => {
             </tr>
           `).join('')}
         </table>
+        ` : ''}
 
         <div style="border-bottom: 1px dashed #000; margin: 3mm 0;"></div>
         <div style="text-align: center; font-weight: bold; font-size: 11pt;">
@@ -367,8 +398,16 @@ export const ShiftManager: React.FC<{ onOpen?: () => void }> = ({ onOpen }) => {
   };
 
   const handleFinalReset = () => {
+    // 1. Ejecutar logout para asegurar el bloqueo de la terminal
     logout();
-    window.location.reload();
+    
+    // 2. Limpiar estados internos para permitir una nueva jornada sin F5
+    setStep('IDLE');
+    setAuthUserInfo(null);
+    setStartCashCUP('');
+    setPinInput('');
+    setActualCounts({});
+    setLastShiftSummary(null);
   };
 
   // RENDER: REPORTE Z

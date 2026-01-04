@@ -587,25 +587,30 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       hashedPin = await hashPin(rawPin);
     }
 
-    setEmployees(prev => prev.map(e => e.id === employee.id ? { ...employee, updatedAt: new Date().toISOString() } : e));
+    // 1. Actualizar array de empleados
+    const nextEmployees = employees.map(e => e.id === employee.id ? { ...employee, updatedAt: new Date().toISOString() } : e);
+    setEmployees(nextEmployees);
     
-    setUsers(prev => prev.map(u => {
-      if (u.id === employee.userId) {
-        if (employee.terminationDate) {
-          return u; 
+    // 2. Sincronizar usuarios de TPV y manejar el filtrado de bajas laborales
+    setUsers(prev => {
+      const updatedUsers = prev.map(u => {
+        if (u.id === employee.userId) {
+          return {
+            ...u,
+            name: employee.name,
+            role: employee.role,
+            pin: rawPin ? hashedPin : u.pin
+          };
         }
-        return {
-          ...u,
-          name: employee.name,
-          role: employee.role,
-          pin: rawPin ? hashedPin : u.pin
-        };
-      }
-      return u;
-    }).filter(u => {
-      const emp = employees.find(e => e.userId === u.id);
-      return !emp?.terminationDate;
-    }));
+        return u;
+      });
+
+      // Filtrar usuarios cuyos empleados asociados tengan fecha de baja
+      return updatedUsers.filter(u => {
+        const associatedEmp = nextEmployees.find(e => e.userId === u.id);
+        return !associatedEmp?.terminationDate;
+      });
+    });
 
     notify("Ficha actualizada", "success");
   };

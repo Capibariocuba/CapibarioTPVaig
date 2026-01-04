@@ -7,7 +7,7 @@ import {
   Save, Plus, Trash2, Key, Crown, Printer, Barcode, CreditCard, 
   Phone, Mail, MapPin, Hash, Receipt, AlertCircle, Banknote, Globe, Wallet, Camera, Monitor, LogIn, LogOut, CheckSquare, Square, X,
   ArrowRight, Sparkles, Cloud, Zap, ExternalLink, Copy, Info, QrCode, Image as ImageIcon, Timer, Palette, Cpu, MessageCircle, Check, ShieldAlert,
-  Edit3, History as HistoryIcon, Smartphone, Wifi, Bluetooth, Usb, Link, Bell
+  Edit3, History as HistoryIcon, Smartphone, Wifi, Bluetooth, Usb, Link, Bell, Package
 } from 'lucide-react';
 
 export const Configuration: React.FC = () => {
@@ -15,7 +15,7 @@ export const Configuration: React.FC = () => {
     users, addUser, deleteUser, updateUserPin,
     businessConfig, updateBusinessConfig, 
     currencies, updateCurrency, addCurrency, deleteCurrency, isItemLocked, applyLicenseKey,
-    login, currentUser, logout, notify, warehouses, setView
+    login, validatePin, currentUser, logout, notify, warehouses, setView
   } = useStore();
 
   const [isAuthenticated, setIsAuthenticated] = useState(users.length === 0);
@@ -63,27 +63,36 @@ export const Configuration: React.FC = () => {
   }, [isRescueMode, users]);
 
   const handleAdminLogin = async () => {
-    const success = await login(pinInput);
-    if (success && currentUser?.role === Role.ADMIN) {
+    // BUG FIX: Usamos validatePin para obtener el usuario de forma síncrona/directa
+    // y verificar su rol antes de que el estado global currentUser se actualice.
+    const user = await validatePin(pinInput);
+    
+    if (user && user.role === Role.ADMIN) {
+      await login(pinInput); // Seteamos la sesión global
       setIsAuthenticated(true);
       setPinInput('');
       setFailCount(0);
       localStorage.setItem('cfg_auth_fail_count', '0');
+      notify("Acceso Administrativo Concedido", "success");
     } else {
       const newFails = failCount + 1;
       setFailCount(newFails);
       localStorage.setItem('cfg_auth_fail_count', newFails.toString());
+      
       if (newFails >= 10 && pinInput === '9711062300000032601179') {
         setIsRescueMode(true);
         localStorage.setItem('cfg_rescue_mode', 'true');
         setIsAuthenticated(true);
         setPinInput('');
-      } else if (success) {
+        notify("Modo Rescate Activado", "success");
+      } else if (user) {
         alert("Acceso denegado: Se requiere rol Administrador.");
-        logout();
+        setPinInput('');
+      } else {
+        notify("PIN Incorrecto", "error");
+        setPinInput('');
       }
     }
-    setPinInput('');
   };
 
   const validateEmail = (email: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
@@ -273,22 +282,42 @@ export const Configuration: React.FC = () => {
               </div>
             </div>
 
-            <div className="mt-8 pt-8 border-t border-gray-100 flex items-center justify-between bg-slate-50 p-6 rounded-3xl">
-              <div className="flex items-center gap-4">
-                <div className="p-3 bg-white rounded-2xl shadow-sm text-brand-500">
-                  <Bell size={24}/>
+            <div className="mt-8 pt-8 border-t border-gray-100 space-y-4">
+              <div className="flex items-center justify-between bg-slate-50 p-6 rounded-3xl">
+                <div className="flex items-center gap-4">
+                  <div className="p-3 bg-white rounded-2xl shadow-sm text-brand-500">
+                    <Bell size={24}/>
+                  </div>
+                  <div>
+                    <h4 className="text-sm font-black uppercase text-slate-800 tracking-tighter">Llamado de Pedidos (Lista de Espera)</h4>
+                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">Activa el sistema de avisos en el catálogo online</p>
+                  </div>
                 </div>
-                <div>
-                  <h4 className="text-sm font-black uppercase text-slate-800 tracking-tighter">Llamado de Pedidos (Lista de Espera)</h4>
-                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Activa el sistema de avisos en el catálogo online</p>
-                </div>
+                <button 
+                  onClick={() => setTempBiz({...tempBiz, isOrderCallingActive: !tempBiz.isOrderCallingActive})} 
+                  className={`w-14 h-7 rounded-full p-1 transition-all ${tempBiz.isOrderCallingActive ? 'bg-emerald-50' : 'bg-slate-300'}`}
+                >
+                  <div className={`bg-white w-5 h-5 rounded-full shadow-md transition-all ${tempBiz.isOrderCallingActive ? 'translate-x-7' : 'translate-x-0'}`}></div>
+                </button>
               </div>
-              <button 
-                onClick={() => setTempBiz({...tempBiz, isOrderCallingActive: !tempBiz.isOrderCallingActive})} 
-                className={`w-14 h-7 rounded-full p-1 transition-all ${tempBiz.isOrderCallingActive ? 'bg-emerald-500' : 'bg-slate-300'}`}
-              >
-                <div className={`bg-white w-5 h-5 rounded-full shadow-md transition-all ${tempBiz.isOrderCallingActive ? 'translate-x-7' : 'translate-x-0'}`}></div>
-              </button>
+
+              <div className="flex items-center justify-between bg-slate-50 p-6 rounded-3xl">
+                <div className="flex items-center gap-4">
+                  <div className="p-3 bg-white rounded-2xl shadow-sm text-brand-500">
+                    <Package size={24}/>
+                  </div>
+                  <div>
+                    <h4 className="text-sm font-black uppercase text-slate-800 tracking-tighter">Movimiento de inventario en Reporte Z</h4>
+                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">Incluir el desglose de productos en el comprobante de cierre</p>
+                  </div>
+                </div>
+                <button 
+                  onClick={() => setTempBiz({...tempBiz, includeInventoryInZReport: !tempBiz.includeInventoryInZReport})} 
+                  className={`w-14 h-7 rounded-full p-1 transition-all ${tempBiz.includeInventoryInZReport !== false ? 'bg-emerald-50' : 'bg-slate-300'}`}
+                >
+                  <div className={`bg-white w-5 h-5 rounded-full shadow-md transition-all ${tempBiz.includeInventoryInZReport !== false ? 'translate-x-7' : 'translate-x-0'}`}></div>
+                </button>
+              </div>
             </div>
           </section>
 
@@ -371,6 +400,7 @@ export const Configuration: React.FC = () => {
                                   <div className="grid grid-cols-2 gap-4">
                                       <div className="space-y-1">
                                           <label className="text-[10px] font-black uppercase text-slate-400 pl-2 tracking-widest">Preferencia</label>
+                                          {/* Fix: Added 'e =>' to the onChange handler to properly receive the event and avoid immediate execution of updatePeriph */}
                                           <select className="w-full bg-gray-50 p-4 rounded-2xl font-bold outline-none" value={tempBiz.peripherals?.scannerCameraPreference || 'rear'} onChange={e => updatePeriph({ scannerCameraPreference: e.target.value as any })}>
                                               <option value="rear">Cámara Trasera</option>
                                               <option value="front">Cámara Frontal</option>
@@ -400,7 +430,7 @@ export const Configuration: React.FC = () => {
                   <h3 className="text-2xl font-black text-slate-800 uppercase tracking-tighter flex items-center gap-3"><Globe className="text-brand-500" /> Catálogo Digital PRO</h3>
                   <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-1">Layout Split-Screen con rotación por categoría</p>
                </div>
-               <button onClick={() => setTempBiz({ ...tempBiz, isWebCatalogActive: !tempBiz.isWebCatalogActive })} className={`px-8 py-3 rounded-2xl font-black text-[10px] uppercase tracking-widest transition-all shadow-lg ${tempBiz.isWebCatalogActive ? 'bg-emerald-500 text-white' : 'bg-slate-200 text-slate-500'}`}>{tempBiz.isWebCatalogActive ? 'SERVIDOR ACTIVO' : 'ACTIVAR SERVIDOR'}</button>
+               <button onClick={() => setTempBiz({ ...tempBiz, isWebCatalogActive: !tempBiz.isWebCatalogActive })} className={`px-8 py-3 rounded-2xl font-black text-[10px] uppercase tracking-widest transition-all shadow-lg ${tempBiz.isWebCatalogActive ? 'bg-emerald-50 text-white' : 'bg-slate-200 text-slate-500'}`}>{tempBiz.isWebCatalogActive ? 'SERVIDOR ACTIVO' : 'ACTIVAR SERVIDOR'}</button>
             </div>
 
             {tempBiz.isWebCatalogActive && (
@@ -468,7 +498,7 @@ export const Configuration: React.FC = () => {
                             <div className="bg-white p-6 rounded-3xl border border-gray-200 space-y-4">
                                 <div className="flex items-center justify-between">
                                     <label className="text-[10px] font-black uppercase text-slate-500 tracking-widest">QR Transfermóvil</label>
-                                    <button onClick={() => setTempBiz({ ...tempBiz, showQrTransfer: !tempBiz.showQrTransfer })} className={`w-12 h-6 rounded-full p-1 transition-all ${tempBiz.showQrTransfer ? 'bg-emerald-500' : 'bg-slate-300'}`}>
+                                    <button onClick={() => setTempBiz({ ...tempBiz, showQrTransfer: !tempBiz.showQrTransfer })} className={`w-12 h-6 rounded-full p-1 transition-all ${tempBiz.showQrTransfer ? 'bg-emerald-50' : 'bg-slate-300'}`}>
                                         <div className={`bg-white w-4 h-4 rounded-full transition-all ${tempBiz.showQrTransfer ? 'translate-x-6' : 'translate-x-0'}`}></div>
                                     </button>
                                 </div>
@@ -493,7 +523,7 @@ export const Configuration: React.FC = () => {
                             <div className="bg-white p-6 rounded-3xl border border-gray-200 space-y-4">
                                 <div className="flex items-center justify-between">
                                     <label className="text-[10px] font-black uppercase text-slate-500 tracking-widest">QR Enzona</label>
-                                    <button onClick={() => setTempBiz({ ...tempBiz, showQrEnzona: !tempBiz.showQrEnzona })} className={`w-12 h-6 rounded-full p-1 transition-all ${tempBiz.showQrEnzona ? 'bg-emerald-500' : 'bg-slate-300'}`}>
+                                    <button onClick={() => setTempBiz({ ...tempBiz, showQrEnzona: !tempBiz.showQrEnzona })} className={`w-12 h-6 rounded-full p-1 transition-all ${tempBiz.showQrEnzona ? 'bg-emerald-50' : 'bg-slate-300'}`}>
                                         <div className={`bg-white w-4 h-4 rounded-full transition-all ${tempBiz.showQrEnzona ? 'translate-x-6' : 'translate-x-0'}`}></div>
                                     </button>
                                 </div>
@@ -638,7 +668,6 @@ export const Configuration: React.FC = () => {
                       {[
                         { icon: MapPin, text: '1 Almacén Central' },
                         { icon: UserIcon, text: '3 Operadores Máximos' },
-                        // Fix: Using aliased HistoryIcon
                         { icon: HistoryIcon, text: '5 Días de Auditoría' },
                         { icon: Monitor, text: '1 Terminal POS' },
                         { icon: DollarSign, text: 'Mono-divisa (CUP)' }
@@ -660,7 +689,6 @@ export const Configuration: React.FC = () => {
                       {[
                         { icon: MapPin, text: '3 Almacenes Multi-sitio' },
                         { icon: UserIcon, text: '15 Operadores TPV' },
-                        // Fix: Using aliased HistoryIcon
                         { icon: HistoryIcon, text: '30 Días de Auditoría' },
                         { icon: Monitor, text: '3 Terminales POS' },
                         { icon: DollarSign, text: 'Multi-divisa (CUP/USD/EUR)' },
@@ -686,7 +714,6 @@ export const Configuration: React.FC = () => {
                         { icon: Check, text: 'Historial Auditoría Vitalicio' },
                         { icon: Check, text: 'Terminales POS Ilimitadas' },
                         { icon: Check, text: 'Clientes Ilimitados' },
-                        // Fix: Using aliased ImageIcon to avoid conflict with global Image
                         { icon: ImageIcon, text: 'Branding Personalizado' },
                         { icon: ShieldCheck, text: 'Soporte Prioritario 24/7' }
                       ].map((item, i) => (
@@ -730,7 +757,7 @@ export const Configuration: React.FC = () => {
                        <div className="p-2 bg-white rounded-xl shadow-sm text-slate-400"><Printer size={16}/></div>
                        <div><p className="text-[10px] font-black text-slate-800 uppercase tracking-tighter">Mostrar en Ticket</p><p className="text-[8px] font-bold text-slate-400 uppercase tracking-tight">Aparecerá en el comprobante impreso</p></div>
                     </div>
-                    <button onClick={() => setEditingMethod({...editingMethod, showInTicket: !editingMethod.showInTicket})} className={`w-12 h-6 rounded-full p-1 transition-all ${editingMethod.showInTicket ? 'bg-emerald-500' : 'bg-slate-300'}`}>
+                    <button onClick={() => setEditingMethod({...editingMethod, showInTicket: !editingMethod.showInTicket})} className={`w-12 h-6 rounded-full p-1 transition-all ${editingMethod.showInTicket ? 'bg-emerald-50' : 'bg-slate-300'}`}>
                        <div className={`bg-white w-4 h-4 rounded-full transition-all ${editingMethod.showInTicket ? 'translate-x-6' : 'translate-x-0'}`}></div>
                     </button>
                  </div>

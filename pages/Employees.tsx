@@ -2,18 +2,18 @@
 import React, { useState, useMemo } from 'react';
 import { useStore } from '../context/StoreContext';
 import { 
-  Employee, Role, SalaryType, PayFrequency, EmployeePaymentEvent, View 
+  Employee, Role, SalaryType, PayFrequency, EmployeePaymentEvent, View, Sale
 } from '../types';
 import { 
   UserCheck, Plus, Search, Camera, Phone, Mail, IdCard, Calendar, 
   DollarSign, Zap, Receipt, History, Trash2, Edit3, X, Save, 
-  CheckCircle, AlertCircle, Info, ChevronRight, Briefcase, FileText, AlertTriangle
+  CheckCircle, AlertCircle, Info, ChevronRight, Briefcase, FileText, AlertTriangle, UserIcon
 } from 'lucide-react';
 
 export const Employees: React.FC = () => {
   const { 
     employees, addEmployee, updateEmployee, deleteEmployee, addEmployeePayment, 
-    sales, users, notify, businessConfig 
+    sales, notify, businessConfig 
   } = useStore();
 
   const [search, setSearch] = useState('');
@@ -60,15 +60,15 @@ export const Employees: React.FC = () => {
 
     const finalEmployee: Employee = {
       id: draft.id || crypto.randomUUID().toUpperCase(),
-      userId: draft.userId || '', // Se asignará en el context si es nuevo
-      name: draft.name,
+      userId: draft.userId || '', 
+      name: draft.name!,
       photo: draft.photo,
       ci: draft.ci,
       phone: draft.phone,
       email: draft.email,
-      hireDate: draft.hireDate,
+      hireDate: draft.hireDate!,
       terminationDate: draft.terminationDate,
-      role: draft.role,
+      role: draft.role!,
       salaryType: draft.salaryType || SalaryType.FIXED,
       salaryFixedAmount: Number(draft.salaryFixedAmount) || 0,
       salaryPercent: Number(draft.salaryPercent) || 0,
@@ -193,6 +193,183 @@ export const Employees: React.FC = () => {
         )}
       </div>
 
+      {/* MODAL FICHA DETALLADA (PROFILE) */}
+      {isDetailOpen && activeEmployee.id && (
+        <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-xl z-[110] flex items-end md:items-center justify-center p-0 md:p-10 animate-in fade-in">
+          <div className="bg-white md:rounded-[4rem] w-full max-w-6xl h-full md:h-[90vh] flex flex-col md:flex-row shadow-2xl overflow-hidden animate-in slide-in-from-bottom md:zoom-in">
+            <div className="w-full md:w-80 bg-slate-900 text-white p-8 flex flex-col items-center shrink-0">
+              <div className="relative mb-6">
+                <div className="w-24 h-24 md:w-32 md:h-32 rounded-[2rem] md:rounded-[3rem] bg-white/10 overflow-hidden shadow-2xl border-4 border-slate-800">
+                   {activeEmployee.photo ? <img src={activeEmployee.photo} className="w-full h-full object-cover" /> : <UserCheck size={64} className="m-auto mt-6 text-slate-700" />}
+                </div>
+                <div className="absolute -bottom-2 -right-2 bg-brand-500 text-white p-2 md:p-3 rounded-xl md:rounded-2xl shadow-lg border-4 border-slate-900"><IdCard size={18}/></div>
+              </div>
+              <h2 className="text-xl md:text-2xl font-black uppercase tracking-tighter text-center mb-1">{activeEmployee.name}</h2>
+              <p className="text-[10px] font-black text-brand-400 uppercase tracking-widest mb-6 md:mb-10">{activeEmployee.role}</p>
+
+              <div className="w-full bg-white/5 rounded-3xl p-6 border border-white/5 space-y-4 mb-10 hidden md:block">
+                  <div className="flex justify-between items-center text-[10px] font-black uppercase">
+                      <span className="text-slate-500">Móvil:</span>
+                      <span>{activeEmployee.phone || 'N/A'}</span>
+                  </div>
+                  <div className="flex justify-between items-center text-[10px] font-black uppercase">
+                      <span className="text-slate-500">Contrato:</span>
+                      <span>{new Date(activeEmployee.hireDate).toLocaleDateString()}</span>
+                  </div>
+                  {activeEmployee.terminationDate && (
+                    <div className="flex justify-between items-center text-[10px] font-black uppercase text-red-400">
+                        <span>Baja:</span>
+                        <span>{new Date(activeEmployee.terminationDate).toLocaleDateString()}</span>
+                    </div>
+                  )}
+              </div>
+
+              <div className="mt-auto w-full space-y-3">
+                <button onClick={() => setIsModalOpen(true)} className="w-full bg-white text-slate-900 py-4 rounded-2xl font-black text-[10px] uppercase tracking-widest transition-all hover:bg-brand-500 hover:text-white">Editar Perfil</button>
+                <button onClick={() => setIsDetailOpen(false)} className="w-full bg-slate-800 text-slate-400 py-4 rounded-2xl font-black text-[10px] uppercase tracking-widest">Volver</button>
+              </div>
+            </div>
+
+            <div className="flex-1 flex flex-col bg-gray-50 overflow-hidden">
+               <div className="flex bg-white p-2 border-b border-gray-100 overflow-x-auto scrollbar-hide shrink-0">
+                  {[
+                    { id: 'DETAILS', label: 'Datos y Salario', icon: FileText },
+                    { id: 'PAYMENTS', label: 'Pagos Realizados', icon: DollarSign },
+                    { id: 'ACTIVITY', label: 'Actividad TPV', icon: Receipt }
+                  ].map(tab => (
+                    <button key={tab.id} onClick={() => setActiveTab(tab.id as any)} className={`flex-1 min-w-[120px] flex items-center justify-center gap-3 py-4 px-6 rounded-2xl font-black text-[10px] uppercase tracking-widest transition-all ${activeTab === tab.id ? 'bg-slate-900 text-white shadow-lg' : 'text-slate-400 hover:bg-gray-50'}`}>
+                      <tab.icon size={16} /> {tab.label}
+                    </button>
+                  ))}
+               </div>
+
+               <div className="flex-1 overflow-y-auto p-6 md:p-12 custom-scrollbar">
+                  {activeTab === 'DETAILS' && (
+                    <div className="space-y-8 animate-in fade-in">
+                       <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                          <div className="bg-white p-8 rounded-[3rem] border border-gray-100 shadow-sm relative overflow-hidden">
+                             <div className="absolute top-4 right-8 opacity-5"><UserIcon size={120} className="text-slate-900" /></div>
+                             <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-6">Información Personal</h4>
+                             <div className="space-y-4">
+                                <div className="flex justify-between border-b border-gray-50 pb-3"><span className="text-[10px] font-black text-slate-300 uppercase">CI:</span><span className="font-bold text-sm">{activeEmployee.ci || 'No registrado'}</span></div>
+                                <div className="flex justify-between border-b border-gray-50 pb-3"><span className="text-[10px] font-black text-slate-300 uppercase">Teléfono:</span><span className="font-bold text-sm">{activeEmployee.phone || 'No registrado'}</span></div>
+                                <div className="flex justify-between border-b border-gray-50 pb-3"><span className="text-[10px] font-black text-slate-300 uppercase">Email:</span><span className="font-bold text-sm lowercase">{activeEmployee.email || 'No registrado'}</span></div>
+                             </div>
+                          </div>
+
+                          <div className="bg-white p-8 rounded-[3rem] border border-gray-100 shadow-sm relative overflow-hidden">
+                             <div className="absolute top-4 right-8 opacity-5"><DollarSign size={120} className="text-emerald-500" /></div>
+                             <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-6">Condiciones de Pago</h4>
+                             <div className="space-y-4">
+                                <div className="flex justify-between border-b border-gray-50 pb-3"><span className="text-[10px] font-black text-slate-300 uppercase">Tipo:</span><span className="font-bold text-sm uppercase">{activeEmployee.salaryType}</span></div>
+                                <div className="flex justify-between border-b border-gray-50 pb-3"><span className="text-[10px] font-black text-slate-300 uppercase">Monto Fijo:</span><span className="font-bold text-sm">${activeEmployee.salaryFixedAmount || 0}</span></div>
+                                <div className="flex justify-between border-b border-gray-50 pb-3"><span className="text-[10px] font-black text-slate-300 uppercase">Frecuencia:</span><span className="font-bold text-sm uppercase">{activeEmployee.payFrequency}</span></div>
+                             </div>
+                          </div>
+                       </div>
+                    </div>
+                  )}
+
+                  {activeTab === 'PAYMENTS' && (
+                    <div className="space-y-8 animate-in fade-in">
+                       <div className="bg-slate-900 p-8 rounded-[3rem] text-white flex flex-col md:flex-row items-center justify-between gap-6 shadow-2xl">
+                          <div>
+                             <h4 className="text-[10px] font-black text-brand-400 uppercase tracking-[0.3em] mb-1">Registrar Pago</h4>
+                             <p className="text-xs font-bold text-slate-400 uppercase">Salario, Comisiones o Bonos</p>
+                          </div>
+                          <div className="flex-1 flex gap-3 w-full">
+                             <input type="number" className="flex-1 bg-white/10 border-none p-4 rounded-2xl font-black text-white text-xl outline-none focus:ring-2 focus:ring-brand-500" placeholder="0.00" value={paymentDraft.amount} onChange={e => setPaymentDraft({...paymentDraft, amount: e.target.value})} />
+                             <input className="flex-[2] bg-white/10 border-none p-4 rounded-2xl font-bold text-white text-xs outline-none focus:ring-2 focus:ring-brand-500" placeholder="Motivo/Nota..." value={paymentDraft.note} onChange={e => setPaymentDraft({...paymentDraft, note: e.target.value})} />
+                             <button onClick={handleAddPayment} className="bg-brand-500 text-slate-900 p-4 rounded-2xl font-black hover:bg-brand-400 transition-all"><Plus size={24}/></button>
+                          </div>
+                       </div>
+
+                       <div className="bg-white rounded-[3rem] border border-gray-100 shadow-sm overflow-hidden">
+                          <table className="w-full text-left">
+                             <thead className="bg-gray-50 border-b border-gray-100 text-[9px] font-black uppercase text-slate-400">
+                                <tr>
+                                   <th className="p-6">Fecha y Hora</th>
+                                   <th className="p-6 text-center">Nota / Motivo</th>
+                                   <th className="p-6 text-right">Monto Pagado</th>
+                                </tr>
+                             </thead>
+                             <tbody className="divide-y divide-gray-100">
+                                {activeEmployee.paymentHistory?.map(pay => (
+                                   <tr key={pay.id} className="hover:bg-gray-50 transition-colors">
+                                      <td className="p-6">
+                                         <div className="font-bold text-xs">{new Date(pay.timestamp).toLocaleDateString()}</div>
+                                         <div className="text-[9px] text-slate-400 font-bold">{new Date(pay.timestamp).toLocaleTimeString()}</div>
+                                      </td>
+                                      <td className="p-6 text-center italic text-xs text-slate-500">{pay.note || 'Sin observaciones'}</td>
+                                      <td className="p-6 text-right font-black text-emerald-600 text-lg">${pay.amount.toFixed(2)}</td>
+                                   </tr>
+                                ))}
+                                {activeEmployee.paymentHistory?.length === 0 && (
+                                   <tr><td colSpan={3} className="p-20 text-center text-slate-300 font-black uppercase text-[10px]">Sin historial de pagos</td></tr>
+                                )}
+                             </tbody>
+                          </table>
+                       </div>
+                    </div>
+                  )}
+
+                  {activeTab === 'ACTIVITY' && (
+                    <div className="space-y-8 animate-in fade-in">
+                       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                          <div className="bg-white p-8 rounded-[3rem] border border-gray-100 shadow-sm">
+                             <p className="text-[10px] font-black text-slate-400 uppercase mb-2">Ventas Realizadas</p>
+                             <div className="text-4xl font-black text-slate-900">{employeeSales.length}</div>
+                          </div>
+                          <div className="bg-white p-8 rounded-[3rem] border border-gray-100 shadow-sm">
+                             <p className="text-[10px] font-black text-slate-400 uppercase mb-2">Volumen Total</p>
+                             <div className="text-4xl font-black text-emerald-600">${employeeSales.reduce((acc, s) => acc + s.total, 0).toFixed(2)}</div>
+                          </div>
+                          <div className="bg-white p-8 rounded-[3rem] border border-gray-100 shadow-sm">
+                             <p className="text-[10px] font-black text-slate-400 uppercase mb-2">Ticket Promedio</p>
+                             <div className="text-4xl font-black text-brand-500">
+                                ${employeeSales.length > 0 ? (employeeSales.reduce((acc, s) => acc + s.total, 0) / employeeSales.length).toFixed(2) : '0.00'}
+                             </div>
+                          </div>
+                       </div>
+
+                       <div className="bg-white rounded-[3rem] border border-gray-100 shadow-sm overflow-hidden">
+                          <table className="w-full text-left">
+                             <thead className="bg-gray-50 border-b border-gray-100 text-[9px] font-black uppercase text-slate-400">
+                                <tr>
+                                   <th className="p-6">Transacción</th>
+                                   <th className="p-6 text-center">Ítems</th>
+                                   <th className="p-6 text-right">Total Facturado</th>
+                                </tr>
+                             </thead>
+                             <tbody className="divide-y divide-gray-100">
+                                {employeeSales.slice(-20).reverse().map(sale => (
+                                   <tr key={sale.id} className="hover:bg-gray-50 transition-colors">
+                                      <td className="p-6">
+                                         <div className="font-black text-xs uppercase">Ticket #{sale.ticketNumber || sale.id.slice(-6)}</div>
+                                         <div className="text-[9px] text-slate-400 font-bold">{new Date(sale.timestamp).toLocaleString()}</div>
+                                      </td>
+                                      <td className="p-6 text-center">
+                                         <span className="bg-brand-50 text-brand-600 px-3 py-1 rounded-full text-[10px] font-black uppercase">
+                                            {sale.items.reduce((acc, i) => acc + i.quantity, 0)} Pzas
+                                         </span>
+                                      </td>
+                                      <td className="p-6 text-right font-black text-slate-900 text-lg">${sale.total.toFixed(2)}</td>
+                                   </tr>
+                                ))}
+                                {employeeSales.length === 0 && (
+                                   <tr><td colSpan={3} className="p-20 text-center text-slate-300 font-black uppercase text-[10px]">Sin actividad reciente en TPV</td></tr>
+                                )}
+                             </tbody>
+                          </table>
+                       </div>
+                    </div>
+                  )}
+               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* MODAL CREACIÓN / EDICIÓN */}
       {isModalOpen && (
         <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-md flex items-center justify-center z-[150] p-4 animate-in fade-in">
@@ -288,11 +465,11 @@ export const Employees: React.FC = () => {
 
               <div className="pt-6 border-t border-gray-100 flex flex-col md:flex-row gap-4">
                 <button onClick={handleSave} className="flex-1 bg-slate-900 text-white font-black py-6 rounded-3xl shadow-xl hover:bg-brand-600 transition-all uppercase tracking-[0.2em] text-xs">
-                  Guardar Empleado
+                  Guardar Cambios
                 </button>
                 {draft.id && (
                   <button 
-                    onClick={() => { if(confirm('¿Eliminar empleado? Perderá acceso TPV.')) { deleteEmployee(draft.id!); setIsModalOpen(false); }}} 
+                    onClick={() => { if(confirm('¿Eliminar empleado definitivamente? Perderá acceso TPV.')) { deleteEmployee(draft.id!); setIsModalOpen(false); setIsDetailOpen(false); }}} 
                     className="px-8 bg-red-50 text-red-500 font-black rounded-3xl uppercase text-[10px] tracking-widest"
                   >
                     Eliminar
@@ -303,7 +480,6 @@ export const Employees: React.FC = () => {
           </div>
         </div>
       )}
-      {/* ...resto del archivo omitido para brevedad... */}
     </div>
   );
 };

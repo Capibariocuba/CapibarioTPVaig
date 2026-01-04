@@ -70,6 +70,8 @@ export const DEFAULT_BUSINESS_CONFIG: BusinessConfig = {
   peripherals: { printerMode: 'WEB', barcodeScannerMode: 'KEYBOARD' },
   isWebCatalogActive: false,
   webCatalogPort: 8088,
+  isOrderCallingActive: false,
+  includeInventoryInZReport: true,
   showQrTransfer: false,
   qrTransferImageData: undefined,
   showQrEnzona: false,

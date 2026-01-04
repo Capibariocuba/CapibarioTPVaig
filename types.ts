@@ -130,6 +130,7 @@ export interface BusinessConfig {
   isWebCatalogActive?: boolean;
   webCatalogPort?: number;
   isOrderCallingActive?: boolean;
+  includeInventoryInZReport?: boolean;
   // NUEVOS CAMPOS CATÁLOGO DIGITAL
   digitalCatalogImages?: string[];
   digitalCatalogTicker?: string;
