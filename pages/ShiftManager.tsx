@@ -1,4 +1,3 @@
-
 import React, { useState, useMemo, useEffect } from 'react';
 import { useStore } from '../context/StoreContext';
 import { Currency, View, Role, Product, Sale, Shift, User } from '../types';
@@ -85,7 +84,6 @@ export const ShiftManager: React.FC<{ onOpen?: () => void }> = ({ onOpen }) => {
       const pId = p.id;
       const startStock = currentShift.initialStock[pId] || 0;
       
-      // Cálculo de entradas sumando deltas positivos según logs
       const entriesQty = (p.history || [])
         .filter(log => {
           const logTime = new Date(log.timestamp).getTime();
@@ -94,10 +92,8 @@ export const ShiftManager: React.FC<{ onOpen?: () => void }> = ({ onOpen }) => {
         .reduce((sum, log) => {
           let delta = 0;
           if (log.type === 'STOCK_ADJUST') {
-            // Caso entrada directa por reposición
             delta = Number(log.details_raw?.after?.qty) || 0;
           } else if (log.type === 'UPDATED') {
-            // Caso edición manual del stock (calculamos delta positivo)
             const before = Number(log.details_raw?.before?.stock) || 0;
             const after = Number(log.details_raw?.after?.stock) || 0;
             delta = after - before;
@@ -185,7 +181,6 @@ export const ShiftManager: React.FC<{ onOpen?: () => void }> = ({ onOpen }) => {
   const handleConfirmClosure = () => {
     if (!activeShift) return;
 
-    // A) BLOQUEO POR ÓRDENES PENDIENTES
     if (pendingOrders.length > 0) {
       notify(`No se puede cerrar el turno: Existen ${pendingOrders.length} órdenes en lista de espera por llamar.`, "error");
       return;
@@ -264,6 +259,10 @@ export const ShiftManager: React.FC<{ onOpen?: () => void }> = ({ onOpen }) => {
 
     const totalDiscounts = (Number(s.couponDisc) || 0) + (Number(s.bogoDisc) || 0);
     const hasOffers = totalDiscounts > 0 || (Number(s.bogoApps) || 0) > 0;
+    
+    // Lógica para ocultar sección de reembolsos si no hubo
+    const totalRefunds = (Number(s.refundsIn) || 0) + (Number(s.refundsOut) || 0);
+    const hasRefunds = totalRefunds > 0;
 
     return `
       <div style="font-family: 'Courier New', Courier, monospace; width: 72mm; color: #000; font-size: 10pt; line-height: 1.2;">
@@ -299,13 +298,15 @@ export const ShiftManager: React.FC<{ onOpen?: () => void }> = ({ onOpen }) => {
           `).join('')}
         </table>
 
+        ${hasRefunds ? `
         <div style="border-bottom: 1px solid #000; margin: 3mm 0 2mm 0;"></div>
         <p style="font-weight: bold; margin: 0 0 1mm 0;">REEMBOLSOS TURNO (CUP)</p>
         <div style="font-size: 8pt;">
             <div style="display:flex; justify-content: space-between;"><span>EN CAJA:</span><span>$${formatNum(s.refundsIn)}</span></div>
             <div style="display:flex; justify-content: space-between;"><span>FUERA CAJA:</span><span>$${formatNum(s.refundsOut)}</span></div>
-            <div style="display:flex; justify-content: space-between; font-weight:bold; margin-top:1mm;"><span>TOTAL DEV.:</span><span>$${formatNum((Number(s.refundsIn) || 0) + (Number(s.refundsOut) || 0))}</span></div>
+            <div style="display:flex; justify-content: space-between; font-weight:bold; margin-top:1mm;"><span>TOTAL DEV.:</span><span>$${formatNum(totalRefunds)}</span></div>
         </div>
+        ` : ''}
 
         ${hasOffers ? `
         <div style="border-bottom: 1px solid #000; margin: 3mm 0 2mm 0;"></div>
@@ -357,7 +358,6 @@ export const ShiftManager: React.FC<{ onOpen?: () => void }> = ({ onOpen }) => {
       return;
     }
 
-    // Usar iframe dinámico para evitar bloqueos de ventanas emergentes
     const iframe = document.createElement('iframe');
     iframe.style.position = 'fixed';
     iframe.style.right = '0';
@@ -366,7 +366,6 @@ export const ShiftManager: React.FC<{ onOpen?: () => void }> = ({ onOpen }) => {
     iframe.style.height = '0';
     iframe.style.border = '0';
     
-    // Inyectar el HTML con estilos
     iframe.srcdoc = `
       <!DOCTYPE html>
       <html>
@@ -398,10 +397,7 @@ export const ShiftManager: React.FC<{ onOpen?: () => void }> = ({ onOpen }) => {
   };
 
   const handleFinalReset = () => {
-    // 1. Ejecutar logout para asegurar el bloqueo de la terminal
     logout();
-    
-    // 2. Limpiar estados internos para permitir una nueva jornada sin F5
     setStep('IDLE');
     setAuthUserInfo(null);
     setStartCashCUP('');
