@@ -148,8 +148,15 @@ const ActivationScreen: React.FC = () => {
 };
 
 const RoleGuard: React.FC<{ view: View, children: ReactNode }> = ({ view, children }) => {
-  const { checkModuleAccess } = useStore();
+  const { checkModuleAccess, users } = useStore();
   const isAllowed = checkModuleAccess(view);
+
+  // Si no hay usuarios registrados, permitimos ver exclusivamente el módulo de personal (setup inicial)
+  // Sin mostrar el cartel de acceso restringido para evitar confusión
+  if (users.length === 0) {
+    if (view === View.EMPLOYEES) return <>{children}</>;
+    return null; // Silenciamos otros módulos mientras el MainLayout redirige
+  }
 
   if (!isAllowed) {
     return (
@@ -187,7 +194,7 @@ const RootRouter: React.FC = () => {
 }
 
 const MainLayout: React.FC = () => {
-  const { view, setView, isLicenseValid, employees, checkModuleAccess } = useStore();
+  const { view, setView, isLicenseValid, employees, checkModuleAccess, users } = useStore();
   const [sidebarPinned, setSidebarPinned] = useState(() => localStorage.getItem('_sidebar_pinned') === 'true');
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
@@ -198,12 +205,13 @@ const MainLayout: React.FC = () => {
   // Redirección inteligente al iniciar: Solo a Employees si no hay Admin y el usuario actual tiene permiso
   useEffect(() => {
     const hasAdmin = employees.some((e: any) => e.role === Role.ADMIN);
+    // Bypass: Si no hay usuarios (users.length === 0), canManageEmployees será true con la nueva lógica de StoreContext
     const canManageEmployees = checkModuleAccess(View.EMPLOYEES);
 
     if (isLicenseValid && !hasAdmin && canManageEmployees && view !== View.EMPLOYEES) {
       setView(View.EMPLOYEES);
     }
-  }, [isLicenseValid, employees, view, setView, checkModuleAccess]);
+  }, [isLicenseValid, employees, view, setView, checkModuleAccess, users.length]);
 
   const hasAdmin = employees.some((e: any) => e.role === Role.ADMIN);
 
@@ -215,7 +223,7 @@ const MainLayout: React.FC = () => {
       case View.LEDGER: return <RoleGuard view={View.LEDGER}><Ledger /></RoleGuard>;
       case View.DASHBOARD: return <RoleGuard view={View.DASHBOARD}><AdminDashboard /></RoleGuard>;
       case View.INVENTORY: return <RoleGuard view={View.INVENTORY}><Inventory /></RoleGuard>;
-      case View.CONFIGURATION: return <RoleGuard view={View.CONFIGURATION}><Configuration /></RoleGuard>;
+      case View.CONFIGURATION: return <Configuration />;
       default: return <POS />;
     }
   };
@@ -229,7 +237,7 @@ const MainLayout: React.FC = () => {
         onSetOpen={setSidebarOpen}
       />
       <main className="flex-1 h-full overflow-hidden relative">
-        {!sidebarPinned && !sidebarOpen && hasAdmin && (
+        {!sidebarPinned && !sidebarOpen && (hasAdmin || users.length === 0) && (
           <button 
             onClick={() => setSidebarOpen(true)}
             className="fixed top-6 left-6 z-40 bg-white p-3 rounded-2xl shadow-xl border border-gray-100 text-slate-600 hover:text-brand-500 transition-all active:scale-95 lg:flex hidden"

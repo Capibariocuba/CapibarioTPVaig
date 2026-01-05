@@ -589,7 +589,13 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
     const finalEmployee = { ...employee, userId: newUserId };
     setEmployees(prev => [...prev, finalEmployee]);
-    setUsers(prev => [...prev, newUser]);
+    setUsers(prev => {
+        const next = [...prev, newUser];
+        if (prev.length === 0) {
+            setCurrentUser(newUser);
+        }
+        return next;
+    });
     notify("Empleado registrado con éxito", "success");
   };
 
@@ -646,7 +652,15 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   };
 
   const checkModuleAccess = useCallback((moduleId: string): boolean => {
-    if (!currentUser) return false;
+    // Si no hay usuarios en el sistema, permitimos acceso exclusivo a EMPLOYEES para el setup inicial
+    if (users.length === 0) {
+      return moduleId === View.EMPLOYEES;
+    }
+
+    // Si existen usuarios pero no hay sesión activa, permitir POS y CONFIGURATION para login
+    if (!currentUser) {
+      return moduleId === View.POS || moduleId === View.CONFIGURATION;
+    }
     
     // TPV siempre accesible si el usuario está logueado como medida de seguridad fallback
     if (moduleId === View.POS) return true;
@@ -660,9 +674,10 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
     // El acceso es la intersección de lo permitido por el ROL y lo incluido en el PLAN
     return roleViews.includes(moduleId as View) && planAllowedViews.includes(moduleId as View);
-  }, [currentUser, businessConfig.license]);
+  }, [currentUser, businessConfig.license, users.length]);
 
   const getFirstAllowedView = useCallback((): View => {
+    if (users.length === 0) return View.EMPLOYEES; // Setup inicial forzado
     if (!currentUser) return View.POS;
     if (currentUser.role === Role.ADMIN) return View.POS;
 
@@ -671,7 +686,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       if (checkModuleAccess(v)) return v;
     }
     return View.POS;
-  }, [currentUser, checkModuleAccess]);
+  }, [currentUser, checkModuleAccess, users.length]);
 
   return (
     <StoreContext.Provider value={{
