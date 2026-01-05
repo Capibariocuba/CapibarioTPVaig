@@ -14,11 +14,10 @@ export const generateHwid = () => {
 // Logo Oficial Capibario TPV (Identidad fija del Software)
 export const CAPIBARIO_LOGO = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'%3E%3Cdefs%3E%3ClinearGradient id='a' x1='0%25' y1='0%25' x2='100%25' y2='100%25'%3E%3Cstop offset='0%25' style='stop-color:%230ea5e9;stop-opacity:1' /%3E%3Cstop offset='100%25' style='stop-color:%230c4a6e;stop-opacity:1' /%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='512' height='512' rx='128' fill='url(%23a)'/%3E%3Cpath d='M350 200c0-50-40-80-90-80s-100 30-100 80v120h190V200z' fill='%23fff' opacity='.2'/%3E%3Ccircle cx='200' cy='200' r='20' fill='%23fff'/%3E%3Crect x='160' y='340' width='192' height='40' rx='10' fill='%23f97316'/%3E%3Ctext x='256' y='368' font-family='Arial' font-weight='bold' font-size='24' text-anchor='middle' fill='%23fff'%3ETPV%3C/text%3E%3C/svg%3E";
 
-// LLAVES MAESTRAS DE 24 HORAS
+// LLAVES MAESTRAS DE PRUEBA (24 HORAS)
 export const MASTER_KEYS = {
-    GOLD: 'GOLD-MASTER-24H',
-    SAPPHIRE: 'SAPPHIRE-MASTER-24H',
-    PLATINUM: 'PLATINUM-MASTER-24H'
+    GOLD: 'GoldTest24h',
+    PLATINUM: 'PlatinumTest24h'
 };
 
 export const DEFAULT_BUSINESS_CONFIG: BusinessConfig = {
@@ -40,7 +39,7 @@ export const DEFAULT_BUSINESS_CONFIG: BusinessConfig = {
   showFooter: true,
   logo: undefined,
   licenseStatus: "TRIAL",
-  activeModules: ['POS', 'INVENTORY', 'DASHBOARD', 'LEDGER', 'CONFIGURATION'],
+  activeModules: ['POS', 'CLIENTS'], // Inicia con lo básico permitido por el plan Gold para vendedores
   paymentMethods: [
     { id: 'CASH', label: 'Efectivo', enabled: true, showInTicket: true },
     { id: 'TRANSFER', label: 'Transferencia', enabled: true, showInTicket: true },

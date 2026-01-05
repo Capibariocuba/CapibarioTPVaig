@@ -16,18 +16,17 @@ export const Sidebar: React.FC<SidebarProps> = ({ isPinned, isOpen, onTogglePin,
   const { view, setView, currentUser, logout, checkModuleAccess } = useStore();
 
   const menuItems = [
-    { id: View.POS, label: 'TPV (Venta)', icon: Store, roles: [Role.ADMIN, Role.ACCOUNTANT, Role.DEPENDENT] },
-    { id: View.CLIENTS, label: 'Clientes y Marketing', icon: Users, roles: [Role.ADMIN, Role.ACCOUNTANT, Role.DEPENDENT] },
-    { id: View.EMPLOYEES, label: 'Empleados', icon: UserCheck, roles: [Role.ADMIN, Role.ACCOUNTANT] },
-    { id: View.LEDGER, label: 'Auditoría', icon: FileText, roles: [Role.ADMIN, Role.ACCOUNTANT] },
-    { id: View.DASHBOARD, label: 'Estadísticas', icon: LayoutDashboard, roles: [Role.ADMIN, Role.ACCOUNTANT] },
-    { id: View.INVENTORY, label: 'Inventario', icon: Package, roles: [Role.ADMIN, Role.ACCOUNTANT] },
-    { id: View.CONFIGURATION, label: 'Configuración', icon: Settings, roles: [Role.ADMIN] },
+    { id: View.POS, label: 'TPV (Venta)', icon: Store },
+    { id: View.CLIENTS, label: 'Clientes y Marketing', icon: Users },
+    { id: View.EMPLOYEES, label: 'Empleados', icon: UserCheck },
+    { id: View.LEDGER, label: 'Auditoría', icon: FileText },
+    { id: View.DASHBOARD, label: 'Estadísticas', icon: LayoutDashboard },
+    { id: View.INVENTORY, label: 'Inventario', icon: Package },
+    { id: View.CONFIGURATION, label: 'Configuración', icon: Settings },
   ];
 
-  const filteredMenu = menuItems.filter(item => 
-    !currentUser || item.roles.includes(currentUser.role)
-  );
+  // FILTRADO POR ROL SEGÚN MATRIZ
+  const filteredMenu = menuItems.filter(item => checkModuleAccess(item.id));
 
   const isExpanded = isPinned || isOpen;
 
@@ -68,7 +67,6 @@ export const Sidebar: React.FC<SidebarProps> = ({ isPinned, isOpen, onTogglePin,
         {filteredMenu.map((item) => {
           const Icon = item.icon;
           const isActive = view === item.id;
-          const isRestricted = !checkModuleAccess(item.id);
 
           return (
             <button
@@ -79,11 +77,10 @@ export const Sidebar: React.FC<SidebarProps> = ({ isPinned, isOpen, onTogglePin,
               }}
               className={`w-full flex items-center gap-4 px-4 py-3 rounded-2xl transition-all relative group ${
                 isActive ? 'bg-brand-600 text-white shadow-lg' : 'text-slate-400 hover:text-white hover:bg-slate-800'
-              } ${isRestricted ? 'opacity-50 grayscale' : ''}`}
+              }`}
             >
               <div className="relative flex-shrink-0">
                 <Icon size={20} className={isActive ? 'text-white' : 'group-hover:text-brand-400'} />
-                {isRestricted && <div className="absolute -top-1 -right-1 bg-amber-500 rounded-full p-0.5"><Lock size={8} /></div>}
               </div>
               {isExpanded && (
                 <span className="font-bold text-[11px] uppercase tracking-widest whitespace-nowrap truncate animate-in fade-in duration-300">

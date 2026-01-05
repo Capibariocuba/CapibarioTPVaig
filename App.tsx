@@ -11,8 +11,8 @@ import { Ledger } from './pages/Ledger';
 import { Employees } from './pages/Employees';
 import { WebCatalogView } from './pages/WebCatalogView';
 import { View, Role } from './types';
-import { Key, Cpu, Globe, MessageCircle, AlertCircle, Menu, RefreshCcw } from 'lucide-react';
-import { CAPIBARIO_LOGO } from './constants';
+import { Key, Cpu, Globe, MessageCircle, AlertCircle, Menu, RefreshCcw, ShieldAlert } from 'lucide-react';
+import { CAPIBARIO_LOGO, MASTER_KEYS } from './constants';
 
 class ErrorBoundary extends Component<{children: ReactNode}, {hasError: boolean}> {
   constructor(props: {children: ReactNode}) {
@@ -56,7 +56,7 @@ class ErrorBoundary extends Component<{children: ReactNode}, {hasError: boolean}
 }
 
 const ActivationScreen: React.FC = () => {
-  const { applyLicenseKey, businessConfig } = useStore();
+  const { applyLicenseKey, businessConfig, getFirstAllowedView, setView } = useStore();
   const [key, setKey] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -67,16 +67,19 @@ const ActivationScreen: React.FC = () => {
     setIsLoading(true);
     const success = await applyLicenseKey(key);
     if (!success) {
-      setError("La llave de activación es incorrecta, ha expirado o no coincide con el HWID de este equipo.");
+      setError("Llave de activación incorrecta o no válida para este HWID.");
       setIsLoading(false);
     } else {
-        let tier = 'TRIAL';
-        if (key.includes('GOLD')) tier = 'GOLD';
-        else if (key.includes('SAPPHIRE')) tier = 'SAPPHIRE';
-        else if (key.includes('PLATINUM')) tier = 'PLATINUM';
+        let tier = 'GOLD';
+        if (key === MASTER_KEYS.PLATINUM) tier = 'PLATINUM';
         const expiry = new Date();
         expiry.setHours(expiry.getHours() + 24);
         setSuccessLicense({ tier, expiry: expiry.toLocaleString() });
+        
+        // Redirigir al primer módulo permitido después de un breve delay
+        setTimeout(() => {
+          setView(getFirstAllowedView());
+        }, 2000);
     }
   };
 
@@ -91,7 +94,7 @@ const ActivationScreen: React.FC = () => {
                   <div className="space-y-4 mb-8">
                       <p className="text-slate-300 text-lg">Bienvenido al ecosistema Capibario.</p>
                       <div className="bg-white/5 p-6 rounded-3xl border border-white/5 inline-block mx-auto">
-                          <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-2">Licencia Activada</p>
+                          <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-2">Licencia Activada (24H TEST)</p>
                           <p className="text-2xl font-black text-emerald-400 uppercase tracking-widest">{successLicense.tier} EDITION</p>
                       </div>
                   </div>
@@ -107,8 +110,8 @@ const ActivationScreen: React.FC = () => {
           <div className="mb-10 inline-flex p-4 bg-white rounded-[2.5rem] border border-brand-500/30 shadow-2xl overflow-hidden scale-110">
               <img src={CAPIBARIO_LOGO} alt="Capibario Logo" className="w-32 h-32 object-contain" />
           </div>
-          <h1 className="text-4xl font-black text-white mb-2 tracking-tighter">Bienvenido a Capibario TPV</h1>
-          <p className="text-brand-400 font-black uppercase tracking-[0.2em] text-[10px] mb-12">Desarrollado por CAPIBARIO (+53 50019541)</p>
+          <h1 className="text-4xl font-black text-white mb-2 tracking-tighter">Capibario TPV</h1>
+          <p className="text-brand-400 font-black uppercase tracking-[0.2em] text-[10px] mb-12">Software de Gestión Comercial</p>
 
           <div className="space-y-6 text-left mb-12">
               <div className="bg-white/5 p-6 rounded-3xl border border-white/5 flex items-center gap-5">
@@ -119,38 +122,56 @@ const ActivationScreen: React.FC = () => {
                   </div>
               </div>
               <div className="bg-white/5 p-8 rounded-[2.5rem] border border-white/10 relative">
-                  <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4 pl-2">Llave de Licencia Maestro</label>
+                  <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4 pl-2">Llave de Activación</label>
                   <div className="relative">
                       <Key className="absolute left-5 top-5 text-brand-500" size={24} />
                       <input 
                         className={`w-full bg-slate-900 border-2 ${error ? 'border-red-500/50' : 'border-brand-500/20'} p-5 pl-14 rounded-2xl font-black text-white tracking-widest outline-none focus:border-brand-500 transition-all placeholder:text-slate-700`} 
-                        placeholder="XXXX-XXXX-XXXX-XXXX"
+                        placeholder="INGRESE SU LLAVE..."
                         value={key}
-                        onChange={e => setKey(e.target.value.toUpperCase())}
+                        onChange={e => setKey(e.target.value)}
                       />
                   </div>
                   {error && (
-                    <div className="mt-6 p-6 bg-red-500/10 border border-red-500/20 rounded-2xl animate-in fade-in">
-                        <p className="text-xs font-bold text-red-200 leading-relaxed mb-4">{error}</p>
-                        <a href="https://wa.me/5350019541" target="_blank" className="inline-flex items-center gap-2 bg-emerald-500 text-slate-950 px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest">
-                          <MessageCircle size={14} /> Contactar Soporte
-                        </a>
+                    <div className="mt-6 p-4 bg-red-500/10 border border-red-500/20 rounded-2xl animate-in fade-in">
+                        <p className="text-xs font-bold text-red-200 leading-relaxed">{error}</p>
                     </div>
                   )}
               </div>
           </div>
           <button onClick={handleActivate} disabled={isLoading || !key} className="w-full bg-brand-500 hover:bg-brand-400 text-slate-950 font-black py-6 rounded-3xl shadow-xl transition-all uppercase tracking-widest text-xs">
-            {isLoading ? "Validando Firma..." : "Activar Sistema"} <Globe size={18} />
+            {isLoading ? "Validando..." : "Activar Sistema"}
           </button>
       </div>
     </div>
   );
 };
 
+const RoleGuard: React.FC<{ view: View, children: ReactNode }> = ({ view, children }) => {
+  const { checkModuleAccess } = useStore();
+  const isAllowed = checkModuleAccess(view);
+
+  if (!isAllowed) {
+    return (
+      <div className="h-full w-full flex items-center justify-center bg-gray-50/50 p-6 animate-in fade-in">
+        <div className="bg-white p-12 rounded-[3rem] shadow-2xl text-center max-w-lg border border-gray-100">
+           <div className="w-20 h-20 bg-amber-50 text-amber-500 rounded-[2rem] flex items-center justify-center mx-auto mb-6 shadow-inner">
+             <ShieldAlert size={40} />
+           </div>
+           <h2 className="text-2xl font-black text-slate-800 uppercase tracking-tighter mb-4">Acceso Restringido</h2>
+           <p className="text-slate-500 text-[10px] font-bold leading-relaxed mb-8 uppercase tracking-widest">
+             Su rol actual no posee los privilegios necesarios para acceder a este módulo.
+           </p>
+        </div>
+      </div>
+    );
+  }
+
+  return <>{children}</>;
+};
+
 const RootRouter: React.FC = () => {
-  const { view, setView, isLicenseValid, employees } = useStore();
-  
-  // DETECCIÓN DE MODO CATÁLOGO (Ruta Pública)
+  const { isLicenseValid } = useStore();
   const [isCatalogMode, setIsCatalogMode] = useState(() => window.location.hash.includes('#/catalog'));
 
   useEffect(() => {
@@ -159,18 +180,14 @@ const RootRouter: React.FC = () => {
     return () => window.removeEventListener('hashchange', handleHashChange);
   }, []);
 
-  if (isCatalogMode) {
-    return <WebCatalogView />;
-  }
-
+  if (isCatalogMode) return <WebCatalogView />;
   if (!isLicenseValid) return <ActivationScreen />;
 
   return <MainLayout />;
 }
 
 const MainLayout: React.FC = () => {
-  const { view, setView, isLicenseValid, employees } = useStore();
-  
+  const { view, setView, isLicenseValid, employees, checkModuleAccess } = useStore();
   const [sidebarPinned, setSidebarPinned] = useState(() => localStorage.getItem('_sidebar_pinned') === 'true');
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
@@ -178,25 +195,27 @@ const MainLayout: React.FC = () => {
     localStorage.setItem('_sidebar_pinned', String(sidebarPinned));
   }, [sidebarPinned]);
 
-  // Setup Gate: Si no hay administrador en empleados, forzar vista empleados (Solo en modo TPV)
+  // Redirección inteligente al iniciar: Solo a Employees si no hay Admin y el usuario actual tiene permiso
   useEffect(() => {
     const hasAdmin = employees.some((e: any) => e.role === Role.ADMIN);
-    if (isLicenseValid && !hasAdmin && view !== View.EMPLOYEES) {
+    const canManageEmployees = checkModuleAccess(View.EMPLOYEES);
+
+    if (isLicenseValid && !hasAdmin && canManageEmployees && view !== View.EMPLOYEES) {
       setView(View.EMPLOYEES);
     }
-  }, [isLicenseValid, employees, view, setView]);
+  }, [isLicenseValid, employees, view, setView, checkModuleAccess]);
 
   const hasAdmin = employees.some((e: any) => e.role === Role.ADMIN);
 
   const renderContent = () => {
     switch (view) {
-      case View.POS: return <POS />;
-      case View.DASHBOARD: return <AdminDashboard />;
-      case View.INVENTORY: return <Inventory />;
-      case View.CLIENTS: return <Clients />;
-      case View.CONFIGURATION: return <Configuration />;
-      case View.LEDGER: return <Ledger />;
-      case View.EMPLOYEES: return <Employees />;
+      case View.POS: return <RoleGuard view={View.POS}><POS /></RoleGuard>;
+      case View.CLIENTS: return <RoleGuard view={View.CLIENTS}><Clients /></RoleGuard>;
+      case View.EMPLOYEES: return <RoleGuard view={View.EMPLOYEES}><Employees /></RoleGuard>;
+      case View.LEDGER: return <RoleGuard view={View.LEDGER}><Ledger /></RoleGuard>;
+      case View.DASHBOARD: return <RoleGuard view={View.DASHBOARD}><AdminDashboard /></RoleGuard>;
+      case View.INVENTORY: return <RoleGuard view={View.INVENTORY}><Inventory /></RoleGuard>;
+      case View.CONFIGURATION: return <RoleGuard view={View.CONFIGURATION}><Configuration /></RoleGuard>;
       default: return <POS />;
     }
   };
@@ -209,7 +228,6 @@ const MainLayout: React.FC = () => {
         onTogglePin={() => setSidebarPinned(!sidebarPinned)}
         onSetOpen={setSidebarOpen}
       />
-      
       <main className="flex-1 h-full overflow-hidden relative">
         {!sidebarPinned && !sidebarOpen && hasAdmin && (
           <button 
@@ -219,10 +237,7 @@ const MainLayout: React.FC = () => {
             <Menu size={20} />
           </button>
         )}
-        
-        <ErrorBoundary>
-          {renderContent()}
-        </ErrorBoundary>
+        <ErrorBoundary>{renderContent()}</ErrorBoundary>
       </main>
     </div>
   );

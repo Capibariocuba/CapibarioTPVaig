@@ -5,8 +5,9 @@ import {
   BusinessConfig, Coupon, BogoOffer, Offer, Role, Product, Client, ClientGroup, Ticket, Sale, Warehouse, LicenseTier, POSStoreTerminal, Category, PaymentDetail, PurchaseHistoryItem, Shift, Refund, RefundItem,
   Employee, EmployeePaymentEvent, SalaryType, PayFrequency, PendingOrder
 } from '../types';
-import { MOCK_USERS, DEFAULT_BUSINESS_CONFIG, CATEGORIES as DEFAULT_CATEGORIES } from '../constants';
+import { MOCK_USERS, DEFAULT_BUSINESS_CONFIG, CATEGORIES as DEFAULT_CATEGORIES, MASTER_KEYS } from '../constants';
 import { PermissionEngine } from '../security/PermissionEngine';
+import { ROLE_VIEWS, PLAN_CAPABILITIES } from '../security/Definitions';
 import { AlertCircle, CheckCircle } from 'lucide-react';
 
 const StoreContext = createContext<StoreContextType | undefined>(undefined);
@@ -146,6 +147,17 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   }, []);
 
   const getCurrentTier = useCallback((): LicenseTier => (businessConfig.license?.tier || 'GOLD') as LicenseTier, [businessConfig.license]);
+
+  // Migración y normalización de seguridad
+  useEffect(() => {
+    if (currentUser) {
+      const rolesValues = Object.values(Role);
+      if (!rolesValues.includes(currentUser.role)) {
+        console.warn("Detectado rol inválido o antiguo, normalizando a VENDEDOR");
+        setCurrentUser({ ...currentUser, role: Role.DEPENDENT });
+      }
+    }
+  }, [currentUser]);
 
   useEffect(() => {
     localStorage.setItem('currentUser', JSON.stringify(currentUser));
@@ -633,6 +645,34 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     notify("Pago registrado", "success");
   };
 
+  const checkModuleAccess = useCallback((moduleId: string): boolean => {
+    if (!currentUser) return false;
+    
+    // TPV siempre accesible si el usuario está logueado como medida de seguridad fallback
+    if (moduleId === View.POS) return true;
+
+    const roleViews = ROLE_VIEWS[currentUser.role] || [];
+    const currentPlan = (businessConfig.license?.tier || 'GOLD') as LicenseTier;
+    const planAllowedViews = PLAN_CAPABILITIES[currentPlan]?.allowedViews || [];
+
+    // ADMIN siempre tiene acceso total
+    if (currentUser.role === Role.ADMIN) return true;
+
+    // El acceso es la intersección de lo permitido por el ROL y lo incluido en el PLAN
+    return roleViews.includes(moduleId as View) && planAllowedViews.includes(moduleId as View);
+  }, [currentUser, businessConfig.license]);
+
+  const getFirstAllowedView = useCallback((): View => {
+    if (!currentUser) return View.POS;
+    if (currentUser.role === Role.ADMIN) return View.POS;
+
+    const priorities = [View.POS, View.CLIENTS, View.INVENTORY, View.EMPLOYEES, View.DASHBOARD, View.LEDGER, View.CONFIGURATION];
+    for (const v of priorities) {
+      if (checkModuleAccess(v)) return v;
+    }
+    return View.POS;
+  }, [currentUser, checkModuleAccess]);
+
   return (
     <StoreContext.Provider value={{
       view, setView, currentUser, users, businessConfig, updateBusinessConfig: setBusinessConfig,
@@ -668,6 +708,10 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         notify("Categoría eliminada", "success");
       },
       addUser: async (u) => {
+        if (!PermissionEngine.enforcePlanLimits('OPERATORS', users.length, getCurrentTier())) {
+            notify(`Límite de operadores alcanzado para el plan ${getCurrentTier()}.`, 'error');
+            return;
+        }
         const hashed = await hashPin(u.pin);
         setUsers(prev => [...prev, { ...u, pin: hashed }]);
       },
@@ -676,19 +720,32 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       login,
       validatePin,
       logout,
-      checkModuleAccess: (mid) => PermissionEngine.validateModuleAccess(mid as View, getCurrentTier(), businessConfig.security),
+      checkModuleAccess,
+      getFirstAllowedView,
       isLicenseValid: businessConfig.licenseStatus === 'ACTIVE',
       applyLicenseKey: async (key: string) => {
         let tier: LicenseTier | null = null;
-        if (key.includes('GOLD')) tier = 'GOLD';
-        else if (key.includes('SAPPHIRE')) tier = 'SAPPHIRE';
-        else if (key.includes('PLATINUM')) tier = 'PLATINUM';
+        if (key === MASTER_KEYS.GOLD) tier = 'GOLD';
+        else if (key === MASTER_KEYS.PLATINUM) tier = 'PLATINUM';
+        
         if (!tier) return false;
+
+        // Si es plan GOLD, forzar a moneda CUP si había otras configuradas (para cumplimiento)
+        if (tier === 'GOLD') {
+            setPosCurrency('CUP');
+        }
+
         setBusinessConfig(prev => ({
-          ...prev, licenseStatus: 'ACTIVE',
-          license: { tier: tier!, status: 'ACTIVE', key, expiryDate: new Date(Date.now() + 86400000 * 365).toISOString() } as any
+          ...prev, 
+          licenseStatus: 'ACTIVE',
+          license: { 
+            tier: tier!, 
+            status: 'ACTIVE', 
+            key, 
+            expiryDate: new Date(Date.now() + 86400000).toISOString() // 24 HORAS
+          } as any
         }));
-        notify(`Plan ${tier} Activado`, "success");
+        notify(`Plan ${tier} Activado por 24 horas`, "success");
         return true;
       },
       notification, clearNotification: () => setNotification(null),
@@ -728,7 +785,13 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         setActiveShift(null);
         localStorage.removeItem('activeShift');
       },
-      addCurrency: (c) => setCurrencies(prev => [...prev, c]),
+      addCurrency: (c) => {
+          if (getCurrentTier() === 'GOLD') {
+              notify("El Plan GOLD solo permite operar en CUP", "error");
+              return;
+          }
+          setCurrencies(prev => [...prev, c]);
+      },
       updateCurrency: (c) => setCurrencies(prev => prev.map(curr => curr.code === c.code ? c : curr)),
       deleteCurrency: (code) => setCurrencies(prev => prev.filter(c => c.code !== code)),
       isItemLocked: (key, idx) => PermissionEngine.isItemSoftLocked(key, idx, getCurrentTier()),
@@ -767,7 +830,6 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         setBogoOffers(prev => [...prev, o]);
       },
       updateBogoOffer: (o) => setBogoOffers(prev => prev.map(item => item.id === o.id ? o : item)),
-      // Fix: Corrected filter callback by using 'o' instead of undefined 'i'
       deleteBogoOffer: (id) => setBogoOffers(prev => prev.filter(o => o.id !== id)),
       selectedClientId,
       setSelectedClientId,

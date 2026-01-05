@@ -50,7 +50,7 @@ export interface ScannerConfig {
   enabled: boolean;
 }
 
-export type LicenseTier = 'GOLD' | 'SAPPHIRE' | 'PLATINUM';
+export type LicenseTier = 'GOLD' | 'PLATINUM';
 
 export interface LicenseData {
   key: string;
@@ -479,6 +479,8 @@ export interface StoreContextType {
   setSelectedClientId: (id: string | null) => void;
   sales: Sale[];
   isLicenseValid: boolean;
+  // Added getFirstAllowedView to fix App.tsx Property 'getFirstAllowedView' does not exist on type 'StoreContextType'
+  getFirstAllowedView: () => View;
   timeManipulationDetected: boolean;
   checkModuleAccess: (moduleId: string) => boolean;
   applyLicenseKey: (key: string) => Promise<boolean>;
