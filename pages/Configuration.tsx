@@ -6,7 +6,7 @@ import {
   Lock, Building2, User as UserIcon, DollarSign, ShieldCheck, 
   Save, Plus, Trash2, Key, Crown, Printer, Barcode, CreditCard, 
   Phone, Mail, MapPin, Hash, Receipt, AlertCircle, Banknote, Globe, Wallet, Camera, Monitor, LogIn, LogOut, CheckSquare, Square, X,
-  ArrowRight, Sparkles, Cloud, Zap, ExternalLink, Copy, Info, QrCode, Image as ImageIcon, Timer, Palette, Cpu, MessageCircle, Check, ShieldAlert,
+  ArrowRight, Sparkles, Cloud, Zap, ExternalLink, Copy, Info, QrCode, ImageIcon, Timer, Palette, Cpu, MessageCircle, Check, ShieldAlert,
   Edit3, History as HistoryIcon, Smartphone, Wifi, Bluetooth, Usb, Link, Bell, Package
 } from 'lucide-react';
 
@@ -101,6 +101,31 @@ export const Configuration: React.FC = () => {
     }
   };
 
+  const handleSlideUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      if (file.size > 524288) { notify("Imagen muy grande (máx 512KB)", "error"); return; }
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        const current = tempBiz.digitalCatalogImages || [];
+        setTempBiz({ ...tempBiz, digitalCatalogImages: [...current, reader.result as string] });
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const handleQrUpload = (e: React.ChangeEvent<HTMLInputElement>, target: 'transfer' | 'enzona') => {
+    const file = e.target.files?.[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        if (target === 'transfer') setTempBiz({ ...tempBiz, qrTransferImageData: reader.result as string });
+        else setTempBiz({ ...tempBiz, qrEnzonaImageData: reader.result as string });
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
   const saveBusinessInfo = () => {
     if (isRescueMode) return;
     if (!tempBiz.logo) { notify("El Logo es obligatorio", "error"); return; }
@@ -134,23 +159,6 @@ export const Configuration: React.FC = () => {
     } else {
       notify("Llave de licencia inválida", "error");
     }
-  };
-
-  const handleSaveMethod = () => {
-    if (!editingMethod?.label?.trim()) { notify("Etiqueta obligatoria", "error"); return; }
-    let updatedMethods = [...(tempBiz.paymentMethods || [])];
-    const existsIdx = updatedMethods.findIndex(m => m.id === editingMethod.id);
-    if (existsIdx > -1) updatedMethods[existsIdx] = editingMethod as PaymentMethodConfig;
-    else updatedMethods.push(editingMethod as PaymentMethodConfig);
-
-    setTempBiz({ ...tempBiz, paymentMethods: updatedMethods });
-    setShowMethodModal(false);
-    setEditingMethod(null);
-  };
-
-  const toggleMethodStatus = (id: PaymentMethodType, field: 'enabled' | 'showInTicket') => {
-    const updated = tempBiz.paymentMethods.map(m => m.id === id ? { ...m, [field]: !m[field] } : m);
-    setTempBiz({ ...tempBiz, paymentMethods: updated });
   };
 
   const updatePeriph = (updates: Partial<PeripheralsSettings>) => {
@@ -202,6 +210,7 @@ export const Configuration: React.FC = () => {
 
       {activeTab === 'BUSINESS' && !isRescueMode && (
         <div className="space-y-8 animate-in slide-in-from-bottom-6">
+          {/* INFORMACION GENERAL */}
           <section className="bg-white p-10 rounded-[3rem] shadow-sm border border-gray-100">
             <h3 className="text-2xl font-black text-slate-800 uppercase tracking-tighter flex items-center gap-3 mb-8"><Building2 className="text-brand-500" /> Información General</h3>
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-10">
@@ -224,6 +233,228 @@ export const Configuration: React.FC = () => {
                 <select className="w-full bg-gray-50 p-4 rounded-2xl font-bold outline-none" value={tempBiz.primaryCurrency} onChange={e => setTempBiz({...tempBiz, primaryCurrency: e.target.value})}>{currencies.map(c => <option key={c.code} value={c.code}>{c.code}</option>)}</select>
               </div>
             </div>
+          </section>
+
+          {/* PERIFERICOS Y HARDWARE */}
+          <section className="bg-white p-10 rounded-[3rem] shadow-sm border border-gray-100">
+            <h3 className="text-2xl font-black text-slate-800 uppercase tracking-tighter flex items-center gap-3 mb-8"><Printer className="text-brand-500" /> Periféricos y Hardware</h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-10">
+              <div className="space-y-6">
+                <h4 className="text-[10px] font-black uppercase text-slate-400 tracking-widest flex items-center gap-2"><Receipt size={14}/> Impresora de Tickets</h4>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-1">
+                    <label className="text-[9px] font-bold text-slate-400 uppercase ml-2">Modo</label>
+                    <select className="w-full bg-gray-50 p-4 rounded-2xl font-bold outline-none" value={tempBiz.peripherals?.printerMode || 'WEB'} onChange={e => updatePeriph({ printerMode: e.target.value as any })}>
+                      <option value="WEB">Navegador (Estándar)</option>
+                      <option value="DESKTOP">App Desktop (TCP/IP)</option>
+                      <option value="ANDROID">Móvil (Bluetooth)</option>
+                    </select>
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[9px] font-bold text-slate-400 uppercase ml-2">Papel</label>
+                    <select className="w-full bg-gray-50 p-4 rounded-2xl font-bold outline-none" value={tempBiz.printerConfig.paperSize} onChange={e => setTempBiz({ ...tempBiz, printerConfig: { ...tempBiz.printerConfig, paperSize: e.target.value as any } })}>
+                      <option value="57mm">57mm (Angosta)</option>
+                      <option value="80mm">80mm (Estándar)</option>
+                    </select>
+                  </div>
+                </div>
+                <input className="w-full bg-gray-50 p-4 rounded-2xl font-bold outline-none" placeholder="Nombre/IP Impresora" value={tempBiz.peripherals?.printerName || ''} onChange={e => updatePeriph({ printerName: e.target.value })} />
+              </div>
+
+              <div className="space-y-6">
+                <h4 className="text-[10px] font-black uppercase text-slate-400 tracking-widest flex items-center gap-2"><Barcode size={14}/> Lector de Código de Barras</h4>
+                <div className="space-y-4">
+                  <div className="space-y-1">
+                    <label className="text-[9px] font-bold text-slate-400 uppercase ml-2">Modo de Entrada</label>
+                    <div className="flex gap-2">
+                      {[
+                        { id: 'KEYBOARD', label: 'USB/HID', icon: Usb },
+                        { id: 'CAMERA', label: 'Cámara', icon: Camera },
+                        { id: 'BLUETOOTH', label: 'BT', icon: Bluetooth }
+                      ].map(mode => (
+                        <button key={mode.id} onClick={() => updatePeriph({ barcodeScannerMode: mode.id as any })} className={`flex-1 flex flex-col items-center gap-2 p-4 rounded-2xl border-2 transition-all ${tempBiz.peripherals?.barcodeScannerMode === mode.id ? 'bg-brand-50 border-brand-500 text-brand-600 shadow-md' : 'bg-gray-50 border-transparent text-slate-400'}`}>
+                          <mode.icon size={20} />
+                          <span className="text-[9px] font-black uppercase">{mode.label}</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <label className="flex items-center gap-3 p-4 bg-gray-50 rounded-2xl cursor-pointer">
+                    <input type="checkbox" checked={tempBiz.scannerConfig.enabled} onChange={e => setTempBiz({ ...tempBiz, scannerConfig: { ...tempBiz.scannerConfig, enabled: e.target.checked } })} className="w-5 h-5 accent-brand-500" />
+                    <span className="text-[10px] font-black uppercase text-slate-700">Auto-enfoque / Lectura Continua</span>
+                  </label>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          {/* CATALOGO DIGITAL */}
+          <section className="bg-white p-10 rounded-[3rem] shadow-sm border border-gray-100">
+            <div className="flex justify-between items-center mb-8">
+                <h3 className="text-2xl font-black text-slate-800 uppercase tracking-tighter flex items-center gap-3"><Monitor className="text-brand-500" /> Catálogo Digital e Identidad Visual</h3>
+                <label className="flex items-center gap-3 cursor-pointer">
+                    <div className={`w-14 h-8 rounded-full p-1 transition-all ${tempBiz.isWebCatalogActive ? 'bg-brand-600' : 'bg-slate-200'}`}>
+                        <div className={`bg-white w-6 h-6 rounded-full shadow transition-all ${tempBiz.isWebCatalogActive ? 'translate-x-6' : 'translate-x-0'}`}></div>
+                    </div>
+                    <input type="checkbox" className="hidden" checked={tempBiz.isWebCatalogActive} onChange={e => setTempBiz({...tempBiz, isWebCatalogActive: e.target.checked})} />
+                    <span className="text-[10px] font-black uppercase text-slate-400 tracking-widest">{tempBiz.isWebCatalogActive ? 'ACTIVO' : 'INACTIVO'}</span>
+                </label>
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-10">
+              <div className="space-y-6">
+                <div className="bg-slate-900 p-6 rounded-3xl text-white flex items-center justify-between border-l-4 border-brand-500">
+                    <div>
+                        <p className="text-[9px] font-black text-brand-400 uppercase tracking-widest mb-1">Enlace del Catálogo</p>
+                        <p className="font-bold text-xs">Abre el catálogo en otra pantalla</p>
+                    </div>
+                    <a href="#/catalog" target="_blank" className="p-3 bg-white/10 rounded-xl hover:bg-brand-500 transition-all text-white"><ExternalLink size={20}/></a>
+                </div>
+
+                <div className="space-y-4">
+                    <h4 className="text-[10px] font-black uppercase text-slate-400 tracking-widest flex items-center gap-2"><Sparkles size={14}/> Cintillo Informativo</h4>
+                    <input className="w-full bg-gray-50 p-4 rounded-2xl font-bold outline-none border-2 border-transparent focus:border-brand-500" placeholder="Ej: ¡Bienvenidos! Tenemos ofertas hoy..." value={tempBiz.digitalCatalogTicker || ''} onChange={e => setTempBiz({...tempBiz, digitalCatalogTicker: e.target.value})} />
+                    <div className="grid grid-cols-2 gap-4">
+                        <div className="space-y-1">
+                            <label className="text-[9px] font-bold text-slate-400 uppercase ml-2">Color Fondo</label>
+                            <div className="flex gap-2 items-center bg-gray-50 p-2 rounded-2xl">
+                                <input type="color" className="w-10 h-10 rounded-xl cursor-pointer" value={tempBiz.digitalCatalogTickerBgColor || '#0ea5e9'} onChange={e => setTempBiz({...tempBiz, digitalCatalogTickerBgColor: e.target.value})} />
+                                <span className="text-[10px] font-mono font-bold text-slate-500">{tempBiz.digitalCatalogTickerBgColor || '#0ea5e9'}</span>
+                            </div>
+                        </div>
+                        <div className="space-y-1">
+                            <label className="text-[9px] font-bold text-slate-400 uppercase ml-2">Color Texto</label>
+                            <div className="flex gap-2 items-center bg-gray-50 p-2 rounded-2xl">
+                                <input type="color" className="w-10 h-10 rounded-xl cursor-pointer" value={tempBiz.digitalCatalogTickerTextColor || '#ffffff'} onChange={e => setTempBiz({...tempBiz, digitalCatalogTickerTextColor: e.target.value})} />
+                                <span className="text-[10px] font-mono font-bold text-slate-500">{tempBiz.digitalCatalogTickerTextColor || '#ffffff'}</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div className="space-y-1">
+                        <label className="text-[9px] font-bold text-slate-400 uppercase ml-2 flex items-center gap-1"><Timer size={10}/> Rotación de Pantalla (Segundos)</label>
+                        <input type="number" className="w-full bg-gray-50 p-4 rounded-2xl font-black text-center" value={tempBiz.digitalCatalogRotationSeconds || 10} onChange={e => setTempBiz({...tempBiz, digitalCatalogRotationSeconds: parseInt(e.target.value) || 10})} />
+                    </div>
+                </div>
+              </div>
+
+              <div className="space-y-6">
+                <div className="flex justify-between items-center">
+                    <h4 className="text-[10px] font-black uppercase text-slate-400 tracking-widest flex items-center gap-2"><ImageIcon size={14}/> Diapositivas Promocionales</h4>
+                    <button onClick={() => slideInputRef.current?.click()} className="text-[9px] font-black text-brand-600 uppercase tracking-widest flex items-center gap-1"><Plus size={14}/> Añadir Imagen</button>
+                    <input ref={slideInputRef} type="file" className="hidden" accept="image/*" onChange={handleSlideUpload} />
+                </div>
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                    {tempBiz.digitalCatalogImages?.map((img, idx) => (
+                        <div key={idx} className="aspect-video bg-gray-100 rounded-2xl relative overflow-hidden group border border-gray-200">
+                            <img src={img} className="w-full h-full object-cover" alt="Slide" />
+                            <button onClick={() => {
+                                const next = (tempBiz.digitalCatalogImages || []).filter((_, i) => i !== idx);
+                                setTempBiz({ ...tempBiz, digitalCatalogImages: next });
+                            }} className="absolute top-2 right-2 p-1.5 bg-red-600 text-white rounded-lg opacity-0 group-hover:opacity-100 transition-opacity"><Trash2 size={12}/></button>
+                        </div>
+                    ))}
+                    {(tempBiz.digitalCatalogImages?.length || 0) === 0 && (
+                        <div className="col-span-full py-10 border-2 border-dashed border-gray-100 rounded-[2rem] flex flex-col items-center justify-center text-slate-300">
+                            <ImageIcon size={32} className="mb-2 opacity-20" />
+                            <p className="text-[9px] font-black uppercase tracking-widest">Sin imágenes promocionales</p>
+                        </div>
+                    )}
+                </div>
+              </div>
+            </div>
+          </section>
+
+          {/* PAGOS DIGITALES QR */}
+          <section className="bg-white p-10 rounded-[3rem] shadow-sm border border-gray-100">
+            <h3 className="text-2xl font-black text-slate-800 uppercase tracking-tighter flex items-center gap-3 mb-8"><QrCode className="text-brand-500" /> Pagos Digitales (Códigos QR)</h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-10">
+                {/* QR TRANSFERMOVIL */}
+                <div className={`p-8 rounded-[3rem] border-2 transition-all flex items-center gap-6 ${tempBiz.showQrTransfer ? 'bg-brand-50 border-brand-200' : 'bg-gray-50 border-transparent'}`}>
+                    <div className="w-32 h-32 bg-white rounded-2xl shadow-inner flex items-center justify-center overflow-hidden border-2 border-dashed border-gray-200 relative group shrink-0">
+                        {tempBiz.qrTransferImageData ? (
+                            <><img src={tempBiz.qrTransferImageData} className="w-full h-full object-contain p-2" alt="QR Transfer" /><div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center text-white cursor-pointer" onClick={() => qrTransferRef.current?.click()}><Camera size={24}/></div></>
+                        ) : (
+                            <button onClick={() => qrTransferRef.current?.click()} className="text-slate-300 flex flex-col items-center gap-1"><Camera size={24}/><span className="text-[8px] font-black uppercase">Subir QR</span></button>
+                        )}
+                        <input ref={qrTransferRef} type="file" className="hidden" accept="image/*" onChange={e => handleQrUpload(e, 'transfer')} />
+                    </div>
+                    <div className="flex-1 space-y-4">
+                        <div className="flex justify-between items-center">
+                            <h4 className="font-black text-slate-800 uppercase text-xs">Transfermóvil</h4>
+                            <label className="cursor-pointer">
+                                <div className={`w-10 h-6 rounded-full p-1 transition-all ${tempBiz.showQrTransfer ? 'bg-brand-600' : 'bg-slate-300'}`}>
+                                    <div className={`bg-white w-4 h-4 rounded-full shadow transition-all ${tempBiz.showQrTransfer ? 'translate-x-4' : 'translate-x-0'}`}></div>
+                                </div>
+                                <input type="checkbox" className="hidden" checked={tempBiz.showQrTransfer} onChange={e => setTempBiz({...tempBiz, showQrTransfer: e.target.checked})} />
+                            </label>
+                        </div>
+                        <p className="text-[9px] font-bold text-slate-400 uppercase leading-relaxed">Muestra tu QR de transferencia en el catálogo digital para facilitar el pago remoto.</p>
+                    </div>
+                </div>
+
+                {/* QR ENZONA */}
+                <div className={`p-8 rounded-[3rem] border-2 transition-all flex items-center gap-6 ${tempBiz.showQrEnzona ? 'bg-indigo-50 border-indigo-200' : 'bg-gray-50 border-transparent'}`}>
+                    <div className="w-32 h-32 bg-white rounded-2xl shadow-inner flex items-center justify-center overflow-hidden border-2 border-dashed border-gray-200 relative group shrink-0">
+                        {tempBiz.qrEnzonaImageData ? (
+                            <><img src={tempBiz.qrEnzonaImageData} className="w-full h-full object-contain p-2" alt="QR Enzona" /><div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center text-white cursor-pointer" onClick={() => qrEnzonaRef.current?.click()}><Camera size={24}/></div></>
+                        ) : (
+                            <button onClick={() => qrEnzonaRef.current?.click()} className="text-slate-300 flex flex-col items-center gap-1"><Camera size={24}/><span className="text-[8px] font-black uppercase">Subir QR</span></button>
+                        )}
+                        <input ref={qrEnzonaRef} type="file" className="hidden" accept="image/*" onChange={e => handleQrUpload(e, 'enzona')} />
+                    </div>
+                    <div className="flex-1 space-y-4">
+                        <div className="flex justify-between items-center">
+                            <h4 className="font-black text-slate-800 uppercase text-xs">Enzona</h4>
+                            <label className="cursor-pointer">
+                                <div className={`w-10 h-6 rounded-full p-1 transition-all ${tempBiz.showQrEnzona ? 'bg-indigo-600' : 'bg-slate-300'}`}>
+                                    <div className={`bg-white w-4 h-4 rounded-full shadow transition-all ${tempBiz.showQrEnzona ? 'translate-x-4' : 'translate-x-0'}`}></div>
+                                </div>
+                                <input type="checkbox" className="hidden" checked={tempBiz.showQrEnzona} onChange={e => setTempBiz({...tempBiz, showQrEnzona: e.target.checked})} />
+                            </label>
+                        </div>
+                        <p className="text-[9px] font-bold text-slate-400 uppercase leading-relaxed">Muestra tu QR de Enzona para cobros rápidos mediante escaneo del cliente.</p>
+                    </div>
+                </div>
+            </div>
+          </section>
+
+          {/* OPCIONES DE OPERATIVA */}
+          <section className="bg-white p-10 rounded-[3rem] shadow-sm border border-gray-100">
+            <h3 className="text-2xl font-black text-slate-800 uppercase tracking-tighter flex items-center gap-3 mb-8"><Zap className="text-brand-500" /> Opciones de Operativa</h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                <label className="p-6 rounded-[2rem] bg-gray-50 flex items-center gap-4 cursor-pointer hover:bg-brand-50 transition-colors group">
+                    <div className={`p-3 rounded-xl transition-colors ${tempBiz.includeInventoryInZReport ? 'bg-brand-500 text-white' : 'bg-white text-slate-300 group-hover:bg-brand-100 group-hover:text-brand-500'}`}><Package size={20}/></div>
+                    <div className="flex-1">
+                        <p className="text-[10px] font-black uppercase text-slate-700">Inventario en Reporte Z</p>
+                        <p className="text-[8px] font-bold text-slate-400 uppercase">Resumen de stock al cierre</p>
+                    </div>
+                    <input type="checkbox" className="w-5 h-5 accent-brand-500" checked={tempBiz.includeInventoryInZReport} onChange={e => setTempBiz({...tempBiz, includeInventoryInZReport: e.target.checked})} />
+                </label>
+
+                <label className="p-6 rounded-[2rem] bg-gray-50 flex items-center gap-4 cursor-pointer hover:bg-brand-50 transition-colors group">
+                    <div className={`p-3 rounded-xl transition-colors ${tempBiz.isOrderCallingActive ? 'bg-brand-500 text-white' : 'bg-white text-slate-300 group-hover:bg-brand-100 group-hover:text-brand-500'}`}><Bell size={20}/></div>
+                    <div className="flex-1">
+                        <p className="text-[10px] font-black uppercase text-slate-700">Llamado de Pedidos</p>
+                        <p className="text-[8px] font-bold text-slate-400 uppercase">Habilitar overlay en catálogo</p>
+                    </div>
+                    <input type="checkbox" className="w-5 h-5 accent-brand-500" checked={tempBiz.isOrderCallingActive} onChange={e => setTempBiz({...tempBiz, isOrderCallingActive: e.target.checked})} />
+                </label>
+
+                <label className="p-6 rounded-[2rem] bg-gray-50 flex items-center gap-4 cursor-pointer hover:bg-brand-50 transition-colors group">
+                    <div className={`p-3 rounded-xl transition-colors ${tempBiz.showFooter ? 'bg-brand-500 text-white' : 'bg-white text-slate-300 group-hover:bg-brand-100 group-hover:text-brand-500'}`}><MessageCircle size={20}/></div>
+                    <div className="flex-1">
+                        <p className="text-[10px] font-black uppercase text-slate-700">Mensaje de Pie</p>
+                        <p className="text-[8px] font-bold text-slate-400 uppercase">Mostrar nota en tickets</p>
+                    </div>
+                    <input type="checkbox" className="w-5 h-5 accent-brand-500" checked={tempBiz.showFooter} onChange={e => setTempBiz({...tempBiz, showFooter: e.target.checked})} />
+                </label>
+            </div>
+            {tempBiz.showFooter && (
+                <div className="mt-6 p-6 bg-gray-50 rounded-[2.5rem] animate-in slide-in-from-top-4">
+                    <label className="text-[9px] font-black text-slate-400 uppercase pl-4 tracking-widest mb-2 block">Texto Personalizado para Ticket</label>
+                    <textarea className="w-full bg-white border-2 border-gray-100 p-5 rounded-3xl font-bold text-xs h-24 outline-none focus:border-brand-500 resize-none" value={tempBiz.footerMessage || ''} onChange={e => setTempBiz({...tempBiz, footerMessage: e.target.value})} placeholder="Ej: Gracias por su compra, vuelva pronto..." />
+                </div>
+            )}
           </section>
 
           <button onClick={saveBusinessInfo} className="w-full bg-brand-600 text-white font-black py-8 rounded-[2.5rem] shadow-2xl hover:bg-brand-500 transition-all flex items-center justify-center gap-4 uppercase tracking-[0.3em] text-xs"><Save size={24} /> Consolidar Empresa</button>
@@ -292,57 +523,6 @@ export const Configuration: React.FC = () => {
                   <button onClick={handleActivateLicense} className="w-full bg-slate-900 text-white font-black py-6 rounded-3xl shadow-xl hover:bg-brand-600 transition-all uppercase tracking-widest text-xs">Validar y Activar</button>
                </div>
             </div>
-          </section>
-
-          <section className="space-y-8">
-             <div className="text-center">
-                <h3 className="text-2xl font-black text-slate-800 uppercase tracking-tighter">Comparativa de Planes</h3>
-                <p className="text-[10px] text-slate-400 font-bold uppercase tracking-[0.2em] mt-1">Soluciones diseñadas para su crecimiento</p>
-             </div>
-             
-             <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 max-w-4xl mx-auto">
-                {/* PLAN GOLD */}
-                <div className={`bg-white p-10 rounded-[4rem] border-t-8 border-brand-500 shadow-sm flex flex-col relative overflow-hidden ${tier === 'GOLD' ? 'ring-4 ring-brand-500' : ''}`}>
-                   <div className="absolute top-4 right-8 text-brand-500 opacity-10 rotate-12"><Zap size={100}/></div>
-                   <h4 className="text-2xl font-black uppercase text-slate-900 mb-2">GOLD</h4>
-                   <p className="text-[9px] font-black text-brand-600 uppercase mb-8 tracking-widest">25 USD / Mes</p>
-                   <ul className="space-y-4 flex-1">
-                      {[
-                        { icon: MapPin, text: '1 Almacén Central' },
-                        { icon: UserIcon, text: 'Hasta 5 Operadores TPV' },
-                        { icon: HistoryIcon, text: 'Auditoría 7 Días' },
-                        { icon: DollarSign, text: 'Moneda Única (CUP)' },
-                        { icon: MessageCircle, text: 'Soporte WhatsApp Laboral' }
-                      ].map((item, i) => (
-                        <li key={i} className="flex items-center gap-3 text-[10px] font-bold text-slate-500 uppercase tracking-tight">
-                           <item.icon size={14} className="text-brand-500 shrink-0"/> {item.text}
-                        </li>
-                      ))}
-                   </ul>
-                </div>
-
-                {/* PLAN PLATINUM */}
-                <div className={`bg-slate-900 p-10 rounded-[4rem] border-t-8 border-brand-400 shadow-2xl flex flex-col relative overflow-hidden ${tier === 'PLATINUM' ? 'ring-4 ring-brand-400' : ''}`}>
-                   <div className="absolute top-4 right-8 text-brand-400 opacity-10 rotate-12"><Crown size={100}/></div>
-                   <h4 className="text-2xl font-black uppercase text-white mb-2">PLATINUM</h4>
-                   <p className="text-[9px] font-black text-brand-400 uppercase mb-8 tracking-widest">Acceso Ilimitado</p>
-                   <ul className="space-y-4 flex-1">
-                      {[
-                        { icon: Check, text: 'Almacenes Ilimitados' },
-                        { icon: Check, text: 'Operadores Ilimitados' },
-                        { icon: Check, text: 'Auditoría Sin Límite' },
-                        { icon: Check, text: 'Multi-Divisa Habilitada' },
-                        { icon: Check, text: 'Fidelización y Marketing PRO' },
-                        { icon: Check, text: 'Catálogo Digital Online' },
-                        { icon: ShieldCheck, text: 'Soporte Prioritario 24/7' }
-                      ].map((item, i) => (
-                        <li key={i} className="flex items-center gap-3 text-[10px] font-bold text-slate-300 uppercase tracking-tight">
-                           <item.icon size={14} className="text-brand-400 shrink-0"/> {item.text}
-                        </li>
-                      ))}
-                   </ul>
-                </div>
-             </div>
           </section>
         </div>
       )}
