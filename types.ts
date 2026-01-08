@@ -23,7 +23,7 @@ export enum Role {
   DEPENDENT = 'VENDEDOR'
 }
 
-export type PaymentMethodType = 'CASH' | 'TRANSFER' | 'CARD' | 'CRYPTO' | 'TROPIPAY' | 'QVAPAY' | 'CREDIT' | 'NONE';
+export type PaymentMethodType = 'CASH' | 'TRANSFER' | 'CARD' | 'CRYPTO' | 'TROPIPAY' | 'QVAPAY' | 'CREDIT' | 'NONE' | string;
 
 export interface PaymentMethodConfig {
   id: PaymentMethodType;
@@ -503,6 +503,11 @@ export interface StoreContextType {
   updateEmployee: (employee: Employee, rawPin?: string) => Promise<void>;
   deleteEmployee: (id: string) => void;
   addEmployeePayment: (employeeId: string, payment: EmployeePaymentEvent) => void;
+
+  // MÉTODOS DE PAGO CRUD
+  addPaymentMethod: (method: PaymentMethodConfig) => void;
+  updatePaymentMethod: (method: PaymentMethodConfig) => void;
+  deletePaymentMethod: (id: string) => void;
 }
 
 export interface Product {

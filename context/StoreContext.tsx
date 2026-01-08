@@ -3,7 +3,7 @@ import React, { createContext, useContext, useState, useEffect, useCallback, use
 import { 
   StoreContextType, View, CurrencyConfig, LedgerEntry, User, 
   BusinessConfig, Coupon, BogoOffer, Offer, Role, Product, Client, ClientGroup, Ticket, Sale, Warehouse, LicenseTier, POSStoreTerminal, Category, PaymentDetail, PurchaseHistoryItem, Shift, Refund, RefundItem,
-  Employee, EmployeePaymentEvent, SalaryType, PayFrequency, PendingOrder
+  Employee, EmployeePaymentEvent, SalaryType, PayFrequency, PendingOrder, PaymentMethodConfig
 } from '../types';
 import { MOCK_USERS, DEFAULT_BUSINESS_CONFIG, CATEGORIES as DEFAULT_CATEGORIES, MASTER_KEYS } from '../constants';
 import { PermissionEngine } from '../security/PermissionEngine';
@@ -809,6 +809,27 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       },
       updateCurrency: (c) => setCurrencies(prev => prev.map(curr => curr.code === c.code ? c : curr)),
       deleteCurrency: (code) => setCurrencies(prev => prev.filter(c => c.code !== code)),
+      addPaymentMethod: (method) => {
+        setBusinessConfig(prev => ({
+          ...prev,
+          paymentMethods: [...prev.paymentMethods, method]
+        }));
+        notify("Método de pago añadido", "success");
+      },
+      updatePaymentMethod: (method) => {
+        setBusinessConfig(prev => ({
+          ...prev,
+          paymentMethods: prev.paymentMethods.map(pm => pm.id === method.id ? method : pm)
+        }));
+        notify("Método de pago actualizado", "success");
+      },
+      deletePaymentMethod: (id) => {
+        setBusinessConfig(prev => ({
+          ...prev,
+          paymentMethods: prev.paymentMethods.filter(pm => pm.id !== id)
+        }));
+        notify("Método de pago eliminado", "success");
+      },
       isItemLocked: (key, idx) => PermissionEngine.isItemSoftLocked(key, idx, getCurrentTier()),
       rates,
       getCurrentCash,

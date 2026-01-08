@@ -15,7 +15,8 @@ export const Configuration: React.FC = () => {
     users, addUser, deleteUser, updateUserPin,
     businessConfig, updateBusinessConfig, 
     currencies, updateCurrency, addCurrency, deleteCurrency, isItemLocked, applyLicenseKey,
-    login, validatePin, currentUser, logout, notify, warehouses, setView
+    login, validatePin, currentUser, logout, notify, warehouses, setView,
+    addPaymentMethod, updatePaymentMethod, deletePaymentMethod
   } = useStore();
 
   const [isAuthenticated, setIsAuthenticated] = useState(users.length === 0);
@@ -140,14 +141,39 @@ export const Configuration: React.FC = () => {
 
   const handleAddCurrency = () => {
     if (isRescueMode) return;
-    const { code, rate } = newCurrency;
+    const { code, rate, symbol } = newCurrency;
     if (!code || code.length < 3 || code.length > 5) { notify("Código de divisa inválido", "error"); return; }
     if (currencies.some(c => c.code === code.toUpperCase())) { notify("Esa divisa ya existe", "error"); return; }
     if (!rate || rate <= 0) { notify("La tasa debe ser mayor que 0", "error"); return; }
-    addCurrency({ code: code.toUpperCase(), symbol: newCurrency.symbol || '$', rate: rate, allowedPaymentMethods: newCurrency.allowedPaymentMethods || ['CASH'] });
+    
+    addCurrency({ 
+      code: code.toUpperCase(), 
+      symbol: symbol || '$', 
+      rate: rate, 
+      allowedPaymentMethods: newCurrency.allowedPaymentMethods || ['CASH'] 
+    });
+    
     setShowAddCurrencyModal(false);
     setNewCurrency({ code: '', symbol: '$', rate: 1, allowedPaymentMethods: ['CASH'] });
-    notify("Divisa añadida correctamente", "success");
+  };
+
+  const handleSaveMethod = () => {
+    if (!editingMethod?.label?.trim()) { notify("Etiqueta obligatoria", "error"); return; }
+    
+    const method: PaymentMethodConfig = {
+      id: editingMethod.id || editingMethod.label.toUpperCase().replace(/\s/g, '_'),
+      label: editingMethod.label,
+      enabled: editingMethod.enabled ?? true,
+      showInTicket: editingMethod.showInTicket ?? true
+    };
+
+    if (businessConfig.paymentMethods.some(pm => pm.id === method.id)) {
+      updatePaymentMethod(method);
+    } else {
+      addPaymentMethod(method);
+    }
+    setShowMethodModal(false);
+    setEditingMethod(null);
   };
 
   const handleActivateLicense = async () => {
@@ -418,9 +444,9 @@ export const Configuration: React.FC = () => {
             </div>
           </section>
 
-          {/* OPCIONES DE OPERATIVA */}
+          {/* OPCIONES DE OPERATIVA (TICKETS Y REPORTES) */}
           <section className="bg-white p-10 rounded-[3rem] shadow-sm border border-gray-100">
-            <h3 className="text-2xl font-black text-slate-800 uppercase tracking-tighter flex items-center gap-3 mb-8"><Zap className="text-brand-500" /> Opciones de Operativa</h3>
+            <h3 className="text-2xl font-black text-slate-800 uppercase tracking-tighter flex items-center gap-3 mb-8"><Zap className="text-brand-500" /> Opciones de Operativa y Tickets</h3>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                 <label className="p-6 rounded-[2rem] bg-gray-50 flex items-center gap-4 cursor-pointer hover:bg-brand-50 transition-colors group">
                     <div className={`p-3 rounded-xl transition-colors ${tempBiz.includeInventoryInZReport ? 'bg-brand-500 text-white' : 'bg-white text-slate-300 group-hover:bg-brand-100 group-hover:text-brand-500'}`}><Package size={20}/></div>
@@ -465,13 +491,13 @@ export const Configuration: React.FC = () => {
         <div className="space-y-10 animate-in slide-in-from-bottom-6">
           <section className="bg-white p-10 rounded-[3rem] shadow-sm border border-gray-100">
             <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-8">
-              <div><h3 className="text-2xl font-black text-slate-800 uppercase tracking-tighter flex items-center gap-3"><Banknote className="text-brand-500" /> Gestión de Divisas</h3><p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Configuración monetaria</p></div>
+              <div><h3 className="text-2xl font-black text-slate-800 uppercase tracking-tighter flex items-center gap-3"><Banknote className="text-brand-500" /> Gestión de Divisas</h3><p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Configuración monetaria y tasas de cambio</p></div>
               {tier === 'PLATINUM' && (
                   <button onClick={() => setShowAddCurrencyModal(true)} className="w-full md:w-auto bg-slate-900 text-white px-6 py-3 rounded-2xl font-black text-[10px] uppercase tracking-widest flex items-center justify-center gap-2 shadow-xl hover:bg-brand-600 transition-all"><Plus size={16} /> Añadir Divisa</button>
               )}
             </div>
             {tier === 'GOLD' && (
-              <div className="p-8 bg-amber-50 rounded-3xl border border-amber-100 flex items-center gap-4">
+              <div className="p-8 bg-amber-50 rounded-3xl border border-amber-100 flex items-center gap-4 mb-6">
                  <Lock className="text-amber-500" size={24} />
                  <p className="text-[10px] font-black uppercase text-amber-700 tracking-widest">El Plan GOLD solo permite operar en moneda CUP. Actualice a PLATINUM para multi-divisa.</p>
               </div>
@@ -480,18 +506,64 @@ export const Configuration: React.FC = () => {
               {currencies.filter(c => tier === 'PLATINUM' || c.code === 'CUP').map((c) => {
                 const isBase = c.code === businessConfig.primaryCurrency;
                 return (
-                  <div key={c.code} className="p-6 md:p-8 rounded-[2.5rem] border-2 bg-white border-slate-50 shadow-sm transition-all grid grid-cols-1 xl:grid-cols-4 gap-6 items-center">
-                    <div className="flex items-center gap-4"><div className={`p-4 rounded-2xl font-black text-white shadow-lg ${isBase ? 'bg-brand-600' : 'bg-slate-800'}`}>{c.code}</div><div><h4 className="font-black text-slate-800 uppercase text-xs tracking-widest">{c.code} ({c.symbol})</h4></div></div>
-                    <div className="flex flex-col gap-1"><label className="text-[9px] font-black text-gray-400 uppercase tracking-widest pl-1">Tasa Cambio</label><div className="relative"><DollarSign className="absolute left-3 top-3 text-slate-300" size={14} /><input disabled={isBase} type="number" className="w-full bg-gray-50 p-2.5 pl-8 rounded-xl font-black text-sm outline-none" value={c.rate} onChange={e => updateCurrency({ ...c, rate: parseFloat(e.target.value) || 0 })} /></div></div>
-                    <div className="xl:col-span-2 flex flex-wrap gap-2">
+                  <div key={c.code} className="p-6 md:p-8 rounded-[2.5rem] border-2 bg-white border-slate-50 shadow-sm transition-all grid grid-cols-1 xl:grid-cols-4 gap-6 items-center group">
+                    <div className="flex items-center gap-4">
+                        <div className={`p-4 rounded-2xl font-black text-white shadow-lg ${isBase ? 'bg-brand-600' : 'bg-slate-800'}`}>{c.code}</div>
+                        <div><h4 className="font-black text-slate-800 uppercase text-xs tracking-widest">{c.code} ({c.symbol})</h4></div>
+                    </div>
+                    <div className="flex flex-col gap-1">
+                        <label className="text-[9px] font-black text-gray-400 uppercase tracking-widest pl-1">Tasa Cambio</label>
+                        <div className="relative">
+                            <DollarSign className="absolute left-3 top-3 text-slate-300" size={14} />
+                            <input disabled={isBase} type="number" className="w-full bg-gray-50 p-2.5 pl-8 rounded-xl font-black text-sm outline-none" value={c.rate} onChange={e => updateCurrency({ ...c, rate: parseFloat(e.target.value) || 0 })} />
+                        </div>
+                    </div>
+                    <div className="xl:col-span-1 flex flex-wrap gap-2">
                         {tempBiz.paymentMethods.filter(pm => pm.enabled).map(pm => {
                           const isSelected = c.allowedPaymentMethods.includes(pm.id);
                           return <button key={pm.id} onClick={() => { const newMethods = isSelected ? c.allowedPaymentMethods.filter(id => id !== pm.id) : [...c.allowedPaymentMethods, pm.id]; updateCurrency({ ...c, allowedPaymentMethods: newMethods }); }} className={`flex items-center gap-2 px-3 py-2 rounded-xl text-[9px] font-black uppercase border transition-all ${isSelected ? 'bg-brand-600 text-white' : 'bg-white text-gray-400'}`}>{isSelected ? <CheckSquare size={12}/> : <Square size={12}/>}{pm.label}</button>;
                         })}
                     </div>
+                    <div className="flex justify-end">
+                        {!isBase && tier === 'PLATINUM' && (
+                            <button onClick={() => { if(confirm(`¿Eliminar divisa ${c.code}?`)) deleteCurrency(c.code); }} className="p-3 text-red-300 hover:text-red-500 hover:bg-red-50 rounded-xl transition-all opacity-0 group-hover:opacity-100"><Trash2 size={20}/></button>
+                        )}
+                    </div>
                   </div>
                 );
               })}
+            </div>
+          </section>
+
+          <section className="bg-white p-10 rounded-[3rem] shadow-sm border border-gray-100">
+            <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-8">
+              <div><h3 className="text-2xl font-black text-slate-800 uppercase tracking-tighter flex items-center gap-3"><CreditCard className="text-brand-500" /> Métodos de Pago</h3><p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Habilite canales de cobro para el TPV</p></div>
+              <button onClick={() => { setEditingMethod({ label: '', enabled: true, showInTicket: true }); setShowMethodModal(true); }} className="w-full md:w-auto bg-slate-900 text-white px-6 py-3 rounded-2xl font-black text-[10px] uppercase tracking-widest flex items-center justify-center gap-2 shadow-xl hover:bg-brand-600 transition-all"><Plus size={16} /> Nuevo Método</button>
+            </div>
+            
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                {businessConfig.paymentMethods.map(pm => (
+                    <div key={pm.id} className={`p-6 rounded-[2.5rem] border-2 transition-all flex flex-col justify-between ${pm.enabled ? 'bg-white border-slate-50 shadow-sm' : 'bg-gray-50 border-transparent opacity-60'}`}>
+                        <div className="flex justify-between items-start mb-4">
+                            <div className="flex items-center gap-4">
+                                <div className={`p-3 rounded-xl ${pm.enabled ? 'bg-brand-50 text-brand-600' : 'bg-gray-200 text-gray-400'}`}><Wallet size={20}/></div>
+                                <div><h4 className="font-black text-slate-800 uppercase text-xs tracking-widest">{pm.label}</h4><p className="text-[8px] font-bold text-slate-400 uppercase tracking-tighter">ID: {pm.id}</p></div>
+                            </div>
+                            <label className="cursor-pointer">
+                                <div className={`w-10 h-6 rounded-full p-1 transition-all ${pm.enabled ? 'bg-emerald-500' : 'bg-slate-300'}`}>
+                                    <div className={`bg-white w-4 h-4 rounded-full shadow transition-all ${pm.enabled ? 'translate-x-4' : 'translate-x-0'}`}></div>
+                                </div>
+                                <input type="checkbox" className="hidden" checked={pm.enabled} onChange={e => updatePaymentMethod({...pm, enabled: e.target.checked})} />
+                            </label>
+                        </div>
+                        <div className="flex items-center justify-between border-t border-gray-50 pt-4 mt-2">
+                            <button onClick={() => { setEditingMethod(pm); setShowMethodModal(true); }} className="text-[9px] font-black text-brand-600 uppercase tracking-widest hover:underline">Configurar</button>
+                            {!['CASH', 'TRANSFER', 'CREDIT'].includes(pm.id as string) && (
+                                <button onClick={() => { if(confirm('¿Eliminar método?')) deletePaymentMethod(pm.id as string); }} className="text-red-300 hover:text-red-500"><Trash2 size={16}/></button>
+                            )}
+                        </div>
+                    </div>
+                ))}
             </div>
           </section>
         </div>
@@ -524,6 +596,52 @@ export const Configuration: React.FC = () => {
                </div>
             </div>
           </section>
+        </div>
+      )}
+
+      {/* MODAL AÑADIR DIVISA */}
+      {showAddCurrencyModal && (
+        <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-md flex items-center justify-center z-[200] p-4 animate-in fade-in">
+          <div className="bg-white rounded-[3rem] w-full max-w-lg shadow-2xl overflow-hidden animate-in zoom-in">
+            <div className="p-8 bg-slate-900 text-white flex justify-between items-center shrink-0">
+                <h2 className="text-2xl font-black uppercase tracking-tighter">Añadir Divisa</h2>
+                <button onClick={() => setShowAddCurrencyModal(false)} className="p-3 bg-white/10 rounded-2xl"><X size={20}/></button>
+            </div>
+            <div className="p-8 space-y-6">
+                <div className="space-y-1"><label className="text-[10px] font-black uppercase text-slate-400 pl-4 tracking-widest">Código ISO (Ej: USD)</label><input className="w-full bg-slate-50 border-none p-5 rounded-3xl font-black text-slate-800 outline-none focus:ring-2 focus:ring-brand-500 uppercase" maxLength={5} value={newCurrency.code} onChange={e => setNewCurrency({...newCurrency, code: e.target.value})} /></div>
+                <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-1"><label className="text-[10px] font-black uppercase text-slate-400 pl-4 tracking-widest">Símbolo</label><input className="w-full bg-slate-50 border-none p-5 rounded-3xl font-black text-slate-800 outline-none" placeholder="$" value={newCurrency.symbol} onChange={e => setNewCurrency({...newCurrency, symbol: e.target.value})} /></div>
+                    <div className="space-y-1"><label className="text-[10px] font-black uppercase text-slate-400 pl-4 tracking-widest">Tasa Cambio</label><input type="number" className="w-full bg-slate-50 border-none p-5 rounded-3xl font-black text-slate-800 outline-none" value={newCurrency.rate} onChange={e => setNewCurrency({...newCurrency, rate: parseFloat(e.target.value) || 1})} /></div>
+                </div>
+                <button onClick={handleAddCurrency} className="w-full bg-slate-900 text-white font-black py-6 rounded-3xl shadow-xl hover:bg-brand-600 transition-all uppercase text-xs tracking-widest">Registrar Divisa</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL MÉTODOS DE PAGO */}
+      {showMethodModal && (
+        <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-md flex items-center justify-center z-[200] p-4 animate-in fade-in">
+          <div className="bg-white rounded-[3rem] w-full max-w-lg shadow-2xl overflow-hidden animate-in zoom-in">
+            <div className="p-8 bg-slate-900 text-white flex justify-between items-center shrink-0">
+                <h2 className="text-2xl font-black uppercase tracking-tighter">{editingMethod?.id ? 'Configurar Canal' : 'Nuevo Canal de Cobro'}</h2>
+                <button onClick={() => setShowMethodModal(false)} className="p-3 bg-white/10 rounded-2xl"><X size={20}/></button>
+            </div>
+            <div className="p-8 space-y-6">
+                <div className="space-y-1"><label className="text-[10px] font-black uppercase text-slate-400 pl-4 tracking-widest">Nombre del Método *</label><input className="w-full bg-slate-50 border-none p-5 rounded-3xl font-black text-slate-800 outline-none focus:ring-2 focus:ring-brand-500 uppercase" value={editingMethod?.label || ''} onChange={e => setEditingMethod({...editingMethod!, label: e.target.value})} /></div>
+                <div className="flex flex-col gap-4 bg-gray-50 p-6 rounded-3xl border border-gray-100">
+                    <label className="flex items-center gap-4 cursor-pointer group">
+                        <input type="checkbox" className="w-6 h-6 accent-brand-500" checked={editingMethod?.enabled ?? true} onChange={e => setEditingMethod({...editingMethod!, enabled: e.target.checked})} />
+                        <div><p className="text-[10px] font-black uppercase text-slate-800">Canal Habilitado</p><p className="text-[8px] font-bold text-slate-400 uppercase">Permite usar este medio en el TPV</p></div>
+                    </label>
+                    <label className="flex items-center gap-4 cursor-pointer group">
+                        <input type="checkbox" className="w-6 h-6 accent-brand-500" checked={editingMethod?.showInTicket ?? true} onChange={e => setEditingMethod({...editingMethod!, showInTicket: e.target.checked})} />
+                        <div><p className="text-[10px] font-black uppercase text-slate-800">Mostrar en Ticket</p><p className="text-[8px] font-bold text-slate-400 uppercase">Imprime el detalle de pago en el recibo</p></div>
+                    </label>
+                </div>
+                <button onClick={handleSaveMethod} className="w-full bg-slate-900 text-white font-black py-6 rounded-3xl shadow-xl hover:bg-brand-600 transition-all uppercase text-xs tracking-widest">Guardar Cambios</button>
+            </div>
+          </div>
         </div>
       )}
     </div>
