@@ -771,11 +771,28 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       cart, clearCart: () => setCart([]), addToCart: (p) => setCart(prev => [...prev, p]),
       removeFromCart: (id) => setCart(prev => prev.filter(i => i.cartId !== id)),
       updateQuantity: (cartId, delta) => {
-        setCart(prev => prev.map(item => 
-          item.cartId === cartId 
-            ? { ...item, quantity: Math.max(1, (Number(item.quantity) || 0) + delta) } 
-            : item
-        ));
+        setCart(prev => {
+          const item = prev.find(i => i.cartId === cartId);
+          if (!item) return prev;
+          
+          if (delta <= 0) {
+            return prev.map(i => i.cartId === cartId ? { ...i, quantity: Math.max(1, (Number(i.quantity) || 0) + delta) } : i);
+          }
+          
+          const p = products.find(prod => prod.id === item.id);
+          if (!p) return prev;
+          
+          const stockAvailable = item.selectedVariantId 
+            ? (p.variants.find(v => v.id === item.selectedVariantId)?.stock || 0)
+            : (p.stock || 0);
+            
+          if ((Number(item.quantity) + delta) > stockAvailable) {
+            notify(`Stock insuficiente: ${stockAvailable} disponibles`, "error");
+            return prev;
+          }
+
+          return prev.map(i => i.cartId === cartId ? { ...i, quantity: Number(i.quantity) + delta } : i);
+        });
       },
       processSale,
       processRefund,
@@ -821,6 +838,13 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           ...prev,
           paymentMethods: prev.paymentMethods.map(pm => pm.id === method.id ? method : pm)
         }));
+        // Sincronización: si se desactiva, eliminar de todas las monedas
+        if (!method.enabled) {
+          setCurrencies(prev => prev.map(c => ({
+            ...c,
+            allowedPaymentMethods: c.allowedPaymentMethods.filter(id => id !== method.id)
+          })));
+        }
         notify("Método de pago actualizado", "success");
       },
       deletePaymentMethod: (id) => {
@@ -828,6 +852,11 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           ...prev,
           paymentMethods: prev.paymentMethods.filter(pm => pm.id !== id)
         }));
+        // Sincronización: eliminar de todas las monedas
+        setCurrencies(prev => prev.map(c => ({
+          ...c,
+          allowedPaymentMethods: c.allowedPaymentMethods.filter(mid => mid !== id)
+        })));
         notify("Método de pago eliminado", "success");
       },
       isItemLocked: (key, idx) => PermissionEngine.isItemSoftLocked(key, idx, getCurrentTier()),

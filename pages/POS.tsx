@@ -352,6 +352,19 @@ export const POS: React.FC = () => {
         return;
       }
 
+      // Validar existencias finales antes de cerrar venta
+      for (const item of cart) {
+        const p = products.find(prod => prod.id === item.id);
+        if (!p) continue;
+        const stockAvailable = item.selectedVariantId 
+          ? (p.variants.find(v => v.id === item.selectedVariantId)?.stock || 0)
+          : (p.stock || 0);
+        if (Number(item.quantity) > stockAvailable) {
+          notify(`Stock insuficiente para ${item.name}: ${stockAvailable} disponibles`, "error");
+          return;
+        }
+      }
+
       const ticket = processSale({ 
           items: cart, 
           subtotal: cartSubtotal, 
@@ -770,16 +783,26 @@ export const POS: React.FC = () => {
                         <button onClick={() => setSelectedProductForVariants(null)} className="p-3 bg-white/10 hover:bg-white/20 rounded-2xl transition-all"><X size={24}/></button>
                     </div>
                     <div className="flex-1 overflow-y-auto p-6 bg-gray-50 custom-scrollbar grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <button disabled={(Number(selectedProductForVariants.stock) || 0) <= 0} onClick={() => handleAddToCart(selectedProductForVariants, undefined, true)} className={`p-6 rounded-[2.5rem] border-2 text-left transition-all flex items-center gap-5 ${(Number(selectedProductForVariants.stock) || 0) > 0 ? 'bg-white border-slate-100 hover:border-brand-500 shadow-sm' : 'bg-gray-100 border-gray-200 opacity-60 cursor-not-allowed'}`}>
-                            <div className="w-16 h-16 rounded-2xl bg-gray-100 overflow-hidden flex-shrink-0">{selectedProductForVariants.image ? <img src={selectedProductForVariants.image} className="w-full h-full object-cover" /> : <Package className="p-4 text-slate-300 w-full h-full" />}</div>
-                            <div className="flex-1"><h4 className="font-black text-slate-800 uppercase text-xs">Estándar (Base)</h4><div className="flex justify-between items-center mt-1"><span className="text-[10px] font-black text-brand-600">{currencies.find(c => c.code === posCurrency)?.symbol}{formatNum(convertValue(Number(selectedProductForVariants.price || 0)))}</span><span className={`text-[8px] font-black uppercase px-2 py-0.5 rounded-full ${(Number(selectedProductForVariants.stock) || 0) > 5 ? 'bg-emerald-50 text-emerald-600' : 'bg-red-50 text-red-600'}`}>{selectedProductForVariants.stock} DISP.</span></div></div>
-                        </button>
-                        {selectedProductForVariants.variants?.map(v => (
-                            <button key={v.id} disabled={(Number(v.stock) || 0) <= 0} onClick={() => handleAddToCart(selectedProductForVariants, v.id)} className={`p-6 rounded-[2.5rem] border-2 text-left transition-all flex items-center gap-5 ${(Number(v.stock) || 0) > 0 ? 'bg-white border-slate-100 hover:border-brand-500 shadow-sm' : 'bg-gray-100 border-gray-200 opacity-60 cursor-not-allowed'}`}>
-                                <div className="w-16 h-16 rounded-2xl bg-gray-100 overflow-hidden flex-shrink-0 relative">{v.image ? <img src={v.image} className="w-full h-full object-cover" /> : <div className="w-full h-full" style={{ backgroundColor: v.color || '#64748b' }}></div>}</div>
-                                <div className="flex-1"><h4 className="font-black text-slate-800 uppercase text-xs line-clamp-1">{v.name}</h4><div className="flex justify-between items-center mt-1"><span className="text-[10px] font-black text-brand-600">{currencies.find(c => c.code === posCurrency)?.symbol}{formatNum(convertValue(Number(v.price || 0)))}</span><span className={`text-[8px] font-black uppercase px-2 py-0.5 rounded-full ${(Number(v.stock) || 0) > 5 ? 'bg-emerald-50 text-emerald-600' : 'bg-red-50 text-red-600'}`}>{v.stock} DISP.</span></div></div>
-                            </button>
-                        ))}
+                        {(() => {
+                            const baseInCart = cart.find(i => i.id === selectedProductForVariants.id && !i.selectedVariantId)?.quantity || 0;
+                            const baseAvailable = (Number(selectedProductForVariants.stock) || 0) - baseInCart;
+                            return (
+                                <button disabled={baseAvailable <= 0} onClick={() => handleAddToCart(selectedProductForVariants, undefined, true)} className={`p-6 rounded-[2.5rem] border-2 text-left transition-all flex items-center gap-5 ${baseAvailable > 0 ? 'bg-white border-slate-100 hover:border-brand-500 shadow-sm' : 'bg-gray-100 border-gray-200 opacity-60 cursor-not-allowed'}`}>
+                                    <div className="w-16 h-16 rounded-2xl bg-gray-100 overflow-hidden flex-shrink-0">{selectedProductForVariants.image ? <img src={selectedProductForVariants.image} className="w-full h-full object-cover" /> : <Package className="p-4 text-slate-300 w-full h-full" />}</div>
+                                    <div className="flex-1"><h4 className="font-black text-slate-800 uppercase text-xs">Estándar (Base)</h4><div className="flex justify-between items-center mt-1"><span className="text-[10px] font-black text-brand-600">{currencies.find(c => c.code === posCurrency)?.symbol}{formatNum(convertValue(Number(selectedProductForVariants.price || 0)))}</span><span className={`text-[8px] font-black uppercase px-2 py-0.5 rounded-full ${baseAvailable > 5 ? 'bg-emerald-50 text-emerald-600' : 'bg-red-50 text-red-600'}`}>{baseAvailable} DISP.</span></div></div>
+                                </button>
+                            );
+                        })()}
+                        {selectedProductForVariants.variants?.map(v => {
+                            const vInCart = cart.find(i => i.cartId === `${selectedProductForVariants.id}-${v.id}`)?.quantity || 0;
+                            const vAvailable = (Number(v.stock) || 0) - vInCart;
+                            return (
+                                <button key={v.id} disabled={vAvailable <= 0} onClick={() => handleAddToCart(selectedProductForVariants, v.id)} className={`p-6 rounded-[2.5rem] border-2 text-left transition-all flex items-center gap-5 ${vAvailable > 0 ? 'bg-white border-slate-100 hover:border-brand-500 shadow-sm' : 'bg-gray-100 border-gray-200 opacity-60 cursor-not-allowed'}`}>
+                                    <div className="w-16 h-16 rounded-2xl bg-gray-100 overflow-hidden flex-shrink-0 relative">{v.image ? <img src={v.image} className="w-full h-full object-cover" /> : <div className="w-full h-full" style={{ backgroundColor: v.color || '#64748b' }}></div>}</div>
+                                    <div className="flex-1"><h4 className="font-black text-slate-800 uppercase text-xs line-clamp-1">{v.name}</h4><div className="flex justify-between items-center mt-1"><span className="text-[10px] font-black text-brand-600">{currencies.find(c => c.code === posCurrency)?.symbol}{formatNum(convertValue(Number(v.price || 0)))}</span><span className={`text-[8px] font-black uppercase px-2 py-0.5 rounded-full ${vAvailable > 5 ? 'bg-emerald-50 text-emerald-600' : 'bg-red-50 text-red-600'}`}>{vAvailable} DISP.</span></div></div>
+                                </button>
+                            );
+                        })}
                     </div>
                 </div>
             </div>
@@ -830,7 +853,7 @@ export const POS: React.FC = () => {
 
         {isClientModalOpen && (
             <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-md flex items-center justify-center z-[200] p-4 animate-in fade-in">
-                <div className="bg-white rounded-[3rem] w-full max-w-xl shadow-2xl overflow-hidden animate-in zoom-in h-[70vh] flex flex-col">
+                <div className="bg-white rounded-[3rem] w-full max-xl shadow-2xl overflow-hidden animate-in zoom-in h-[70vh] flex flex-col">
                     <div className="p-8 bg-slate-900 text-white flex justify-between items-center shrink-0"><h3 className="text-xl font-black uppercase tracking-tighter">Vincular Cliente</h3><button onClick={() => setIsClientModalOpen(false)} className="p-3 bg-white/10 rounded-2xl"><X size={20}/></button></div>
                     <div className="flex-1 overflow-y-auto p-4 space-y-2">
                         <button onClick={() => { setSelectedClientId(null); setIsClientModalOpen(false); }} className="w-full p-4 rounded-2xl border-2 border-dashed border-gray-100 text-slate-400 font-black uppercase text-[10px] hover:bg-gray-50 transition-all">Consumidor Final (Sin Registro)</button>

@@ -23,9 +23,6 @@ export const Configuration: React.FC = () => {
   const [pinInput, setPinInput] = useState('');
   const [activeTab, setActiveTab] = useState<'BUSINESS' | 'FINANCE' | 'LICENSE' | 'USERS'>('BUSINESS');
 
-  const [isRescueMode, setIsRescueMode] = useState(() => localStorage.getItem('cfg_rescue_mode') === 'true');
-  const [failCount, setFailCount] = useState(() => parseInt(localStorage.getItem('cfg_auth_fail_count') || '0'));
-
   const [tempBiz, setTempBiz] = useState<BusinessConfig>(businessConfig);
   const [editingPinUser, setEditingPinUser] = useState<string | null>(null);
   const [newPinValue, setNewPinValue] = useState('');
@@ -49,16 +46,6 @@ export const Configuration: React.FC = () => {
 
   const tier = (businessConfig.license?.tier || 'GOLD') as LicenseTier;
 
-  useEffect(() => {
-    if (isRescueMode) {
-      setActiveTab('USERS');
-      const firstAdmin = users.find(u => u.role === Role.ADMIN);
-      if (firstAdmin && !editingPinUser) {
-        setEditingPinUser(firstAdmin.id);
-      }
-    }
-  }, [isRescueMode, users]);
-
   const handleAdminLogin = async () => {
     const user = await validatePin(pinInput);
     
@@ -66,27 +53,13 @@ export const Configuration: React.FC = () => {
       await login(pinInput);
       setIsAuthenticated(true);
       setPinInput('');
-      setFailCount(0);
-      localStorage.setItem('cfg_auth_fail_count', '0');
       notify("Acceso Administrativo Concedido", "success");
+    } else if (user) {
+      alert("Acceso denegado: Se requiere rol Administrador.");
+      setPinInput('');
     } else {
-      const newFails = failCount + 1;
-      setFailCount(newFails);
-      localStorage.setItem('cfg_auth_fail_count', newFails.toString());
-      
-      if (newFails >= 10 && pinInput === '9711062300000032601179') {
-        setIsRescueMode(true);
-        localStorage.setItem('cfg_rescue_mode', 'true');
-        setIsAuthenticated(true);
-        setPinInput('');
-        notify("Modo Rescate Activado", "success");
-      } else if (user) {
-        alert("Acceso denegado: Se requiere rol Administrador.");
-        setPinInput('');
-      } else {
-        notify("PIN Incorrecto", "error");
-        setPinInput('');
-      }
+      notify("PIN Incorrecto", "error");
+      setPinInput('');
     }
   };
 
@@ -128,7 +101,6 @@ export const Configuration: React.FC = () => {
   };
 
   const saveBusinessInfo = () => {
-    if (isRescueMode) return;
     if (!tempBiz.logo) { notify("El Logo es obligatorio", "error"); return; }
     if (!tempBiz.name.trim()) { notify("Nombre del negocio obligatorio", "error"); return; }
     if (!tempBiz.phone.trim()) { notify("Teléfono obligatorio", "error"); return; }
@@ -140,7 +112,6 @@ export const Configuration: React.FC = () => {
   };
 
   const handleAddCurrency = () => {
-    if (isRescueMode) return;
     const { code, rate, symbol } = newCurrency;
     if (!code || code.length < 3 || code.length > 5) { notify("Código de divisa inválido", "error"); return; }
     if (currencies.some(c => c.code === code.toUpperCase())) { notify("Esa divisa ya existe", "error"); return; }
@@ -197,13 +168,13 @@ export const Configuration: React.FC = () => {
     });
   };
 
-  if (!isAuthenticated && !isRescueMode && users.length > 0) {
+  if (!isAuthenticated && users.length > 0) {
     return (
       <div className="h-full flex items-center justify-center bg-slate-950 p-4">
         <div className="bg-white p-12 rounded-[3rem] shadow-2xl max-sm w-full text-center animate-in zoom-in duration-300">
           <div className="bg-brand-50 w-24 h-24 rounded-3xl flex items-center justify-center mx-auto mb-8 text-brand-600"><ShieldCheck size={48} /></div>
           <h2 className="text-3xl font-black mb-4 text-slate-900 uppercase">Seguridad Admin</h2>
-          <input type="password" autoFocus value={pinInput} onChange={e => setPinInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleAdminLogin()} className="w-full text-center text-5xl border-none bg-gray-100 rounded-2xl py-6 mb-8 font-black text-slate-800 outline-none" maxLength={failCount >= 10 ? 25 : 4} placeholder="••••" />
+          <input type="password" autoFocus value={pinInput} onChange={e => setPinInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleAdminLogin()} className="w-full text-center text-5xl border-none bg-gray-100 rounded-2xl py-6 mb-8 font-black text-slate-800 outline-none" maxLength={4} placeholder="••••" />
           <button onClick={handleAdminLogin} className="w-full bg-slate-900 text-white font-black py-5 rounded-2xl uppercase tracking-widest hover:bg-slate-800 transition-all">Desbloquear</button>
         </div>
       </div>
@@ -217,7 +188,7 @@ export const Configuration: React.FC = () => {
           <h1 className="text-4xl font-black text-slate-900 tracking-tighter uppercase">Configuración</h1>
           <p className="text-xs text-slate-400 font-bold uppercase tracking-widest mt-1">Gestión del ecosistema Capibario</p>
         </div>
-        {users.length > 0 && !isRescueMode && (
+        {users.length > 0 && (
           <button onClick={() => setIsAuthenticated(false)} className="bg-slate-900 text-white p-4 rounded-2xl shadow-xl hover:bg-red-600 transition-colors"><Lock size={20} /></button>
         )}
       </div>
@@ -228,13 +199,13 @@ export const Configuration: React.FC = () => {
           { id: 'FINANCE', label: 'Finanzas', icon: DollarSign },
           { id: 'LICENSE', label: 'Licencia', icon: ShieldCheck }
         ].map(tab => (
-          <button key={tab.id} disabled={isRescueMode} onClick={() => !isRescueMode && setActiveTab(tab.id as any)} className={`flex-1 flex items-center justify-center gap-3 py-4 px-6 rounded-2xl font-black text-[10px] uppercase tracking-widest transition-all ${activeTab === tab.id ? 'bg-slate-900 text-white shadow-lg' : 'text-slate-400 hover:bg-gray-50'} ${isRescueMode ? 'opacity-30 cursor-not-allowed' : ''}`}>
+          <button key={tab.id} onClick={() => setActiveTab(tab.id as any)} className={`flex-1 flex items-center justify-center gap-3 py-4 px-6 rounded-2xl font-black text-[10px] uppercase tracking-widest transition-all ${activeTab === tab.id ? 'bg-slate-900 text-white shadow-lg' : 'text-slate-400 hover:bg-gray-50'}`}>
             <tab.icon size={16} /> {tab.label}
           </button>
         ))}
       </div>
 
-      {activeTab === 'BUSINESS' && !isRescueMode && (
+      {activeTab === 'BUSINESS' && (
         <div className="space-y-8 animate-in slide-in-from-bottom-6">
           {/* INFORMACION GENERAL */}
           <section className="bg-white p-10 rounded-[3rem] shadow-sm border border-gray-100">
@@ -487,7 +458,7 @@ export const Configuration: React.FC = () => {
         </div>
       )}
 
-      {activeTab === 'FINANCE' && !isRescueMode && (
+      {activeTab === 'FINANCE' && (
         <div className="space-y-10 animate-in slide-in-from-bottom-6">
           <section className="bg-white p-10 rounded-[3rem] shadow-sm border border-gray-100">
             <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-8">
@@ -569,7 +540,7 @@ export const Configuration: React.FC = () => {
         </div>
       )}
 
-      {activeTab === 'LICENSE' && !isRescueMode && (
+      {activeTab === 'LICENSE' && (
         <div className="space-y-12 animate-in slide-in-from-bottom-6">
           <section className="bg-white p-10 rounded-[3rem] shadow-sm border border-gray-100">
             <h3 className="text-2xl font-black text-slate-800 uppercase tracking-tighter flex items-center gap-3 mb-8"><Crown className="text-brand-500" /> Estatus de Suscripción</h3>
